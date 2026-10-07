@@ -1,0 +1,31 @@
+name: バグ報告
+description: 再現手順と期待する動作をまとめる
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 発生した動作と期待する動作
+      description: ライブ／デモのどちらか、対象の画面や API も記載してください。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. デモで起動する
+        2. 便名を検索する
+        3. 機体を選ぶ
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 動作環境
+      description: OS、Node.js のバージョン、ブラウザー、起動方法。秘密の値は記載しないでください。
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 関連するエラー・画像
+      description: 機体の観測時刻や API の状態があれば記載してください。

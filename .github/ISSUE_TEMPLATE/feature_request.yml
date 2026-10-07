@@ -1,0 +1,21 @@
+name: 機能提案
+description: 目的と完成条件をまとめる
+labels: [enhancement]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 解決したいこと
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 希望する機能・操作
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 完成したと判断する条件
+      description: 要件定義やロードマップの関連番号があれば記載してください。
