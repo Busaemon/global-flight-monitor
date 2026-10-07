@@ -19,9 +19,10 @@ npm run test:e2e
 
 | 検証項目 | 記録済みの結果 | 条件と限界 |
 | --- | --- | --- |
-| バックエンド自動テスト | 20 件成功 | Linux、Node.js 24.19.0。15 個のトップレベルテストと 5 個のサブテスト |
+| バックエンド自動テスト | 21 件成功 | Linux、Node.js 24.19.0。16 個のトップレベルテストと 5 個のサブテスト |
 | ブラウザー自動テスト | 9 件成功 | Linux、システム Chromium。主に固定 API 応答を使用 |
 | 型チェック・本番ビルド | 成功 | `npm run build` |
+| 依存パッケージ監査 | 検出 0 件 | 開発用依存を含む `npm audit`。確認時点の登録済みアドバイザリーに基づく |
 | 匿名 OpenSky 取得 | 成功 | 約 1.1 万機の観測を取得した時点の確認。将来の件数・接続成功を保証しない |
 | API 手動確認・DB 再起動 | 確認済み | ローカル HTTP と保存済み実データの再読込 |
 | Windows / PowerShell | 未実行 | 現クラウドに PowerShell がない。以下の手動受入項目を利用者の PC で確認する |
@@ -31,7 +32,7 @@ npm run test:e2e
 
 ## バックエンドの自動テスト
 
-ソース: [`tests/backend.test.ts`](../tests/backend.test.ts)。B01～B15 はソース内のトップレベル `test()` と対応します。
+ソース: [`tests/backend.test.ts`](../tests/backend.test.ts)。B01～B16 はソース内のトップレベル `test()` と対応します。
 
 | ID | ソース内のテスト名 | 主な確認内容 |
 | --- | --- | --- |
@@ -50,6 +51,7 @@ npm run test:e2e
 | B13 | `OpenSky rate-limit response headers impose a cooldown before another upstream request` | 429 ヘッダーによる待機と、期限後の取得再開 |
 | B14 | `OAuth credentials use the token endpoint and cache an expiring token without exposing it in responses` | 模擬資格情報で client_credentials、期限付きトークン再利用、応答へのトークン混入防止 |
 | B15 | `an OAuth 401 refreshes the rejected token once, with bounded retries for permanent rejection` | 拒否されたトークンを一度更新し、無制限に再試行しない |
+| B16 | `regressing observations preserve the latest snapshot, while an equal timestamp can report zero aircraft` | 鮮度期限内でも保存済みより古い観測を拒否し、値と DB・再試行間隔を保持。同じ観測時刻の正常な 0 機は受け入れる |
 
 B13 のサブテストは `x-rate-limit-retry-after-seconds: 120`、`retry-after: 180`、HTTP 日付の `retry-after` の 3 件です。B15 は `success after token refresh` と `permanently rejected` の 2 件です。
 
@@ -102,7 +104,7 @@ E02～E09 のダッシュボード応答はモックです。地図タイルも�
 | FR-03 検索・並び替え・ページ切替 | `App` の検索・並び順・ページ状態 | E02、M03・M11 |
 | FR-04 機体詳細 | `FlightService.detail()`、`DetailCard` | B12、E01～E03、M03 |
 | FR-05 単位と情報の意味 | `parseOpenSky()`、画面の `meters()`・`speed()` | B01・B02、E02、M03 |
-| FR-06 状態と鮮度 | `FlightService.dashboard()`、`useDashboard()` | B07・B08・B10・B11、E04・E06～E09、M05・M06 |
+| FR-06 状態と鮮度 | `FlightService.dashboard()`、`useDashboard()` | B07・B08・B10・B11・B16、E04・E06～E09、M05・M06 |
 | FR-07 取得間隔と制限 | `FlightService.dashboard()`、`OpenSkyProvider.fetchObservation()` | B06・B09・B13～B15 |
 | FR-08 明示的なデモ | DB のモード分離と `App` のモード状態 | B04・B08・B12、E01・E04・E05・E09、M02 |
 | FR-09 保存と履歴 | `FlightDatabase.save()`、`read()`、`history()` | B04・B05・B09、M07 |
@@ -112,14 +114,14 @@ E02～E09 のダッシュボード応答はモックです。地図タイルも�
 
 変更後の GitHub の記録には、実行 OS、Node.js バージョン、実行コマンド、結果、未検証項目を残します。スクリーンショットだけで API・DB の検証完了とは判定しません。
 
-## 配布 ZIP の追加検証
+## 導入と画面の追加確認
 
-配布物を Linux / Node.js 24.19.0 の別の既存フォルダー（パスにスペースを含む）へ展開して確認しました。
+Linux / Node.js 24.19.0 で、通常のテストに加えて次を確認しました。
 
-- `npm run setup` による依存導入・DB 初期化・型検査・ビルドが成功。
-- `npm start` から画面・全ビルド資産・health・デモ一覧・機体詳細を HTTP 200 で取得。
-- 展開先でバックエンドの20テストが成功。
-- 保存後に再度セットアップを実行し、DB の機数・取得時刻・履歴、既存の設定とメモが保持されることを確認。
-- ZIP の CRC、親フォルダーが付いていないこと、`.git`・`.env`・実 DB・依存関係が入っていないことを確認。
+- GitHub から取得した配布ファイルを、スペースを含む既存フォルダーへ配置。既存の `.git`・`.env`・DB 用ファイル・独自メモを保持し、変更前の同名ファイルをバックアップ。
+- `npm run setup` による依存導入・DB 初期化・型検査・ビルドが成功。npm キャッシュ設定の大文字・小文字・未設定の優先順位も確認。
+- ビルド済み画面、health、デモ一覧、機体詳細を本番用サーバーから取得。
+- 幅 1440・900・620・390 px でページの横はみ出しがないことを確認し、画面例を更新。
+- 時計の更新中、変化のない 137 機のマーカーでは位置・選択状態の属性書き換えが 0 件。これは描画抑制の確認であり、大量アクセスの負荷試験ではない。
 
-この追加確認は Windows ネイティブや PowerShell 実行の検証ではありません。Windows の `npm.cmd` 手順と補助スクリプトは利用者の端末で上記の手動受入項目を確認します。
+Windows の `npm.cmd` 手順と PowerShell 補助は未実行です。利用者の端末で上記の手動受入項目を確認します。

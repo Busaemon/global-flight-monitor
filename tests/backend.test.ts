@@ -281,6 +281,41 @@ test('outdated upstream observation timestamps cannot overwrite a good stored sn
   } finally { database.close(); }
 });
 
+test('regressing observations preserve the latest snapshot, while an equal timestamp can report zero aircraft', async () => {
+  const database = new FlightDatabase(':memory:');
+  let now = NOW;
+  let calls = 0;
+  const observations = [observation(), observation([], EPOCH - 30), observation([])];
+  const service = new FlightService(database, {
+    now: () => now, pollIntervalSeconds: 10,
+    provider: { fetchObservation: async () => observations[calls++] },
+  });
+  try {
+    const current = await service.dashboard('live');
+    const saved = database.read('live');
+    now += 10000;
+    const regressed = await service.dashboard('live');
+    assert.equal(regressed.status, 'stale');
+    assert.equal(regressed.observedAt, current.observedAt);
+    assert.deepEqual(regressed.flights, current.flights);
+    assert.deepEqual(regressed.stats, current.stats);
+    assert.match(regressed.message!, /保存済み.*古い/);
+    assert.deepEqual(database.read('live'), saved);
+    assert.equal(regressed.nextRefreshAt, new Date(now + 60000).toISOString());
+    now += 59000;
+    await service.dashboard('live');
+    assert.equal(calls, 2);
+    now += 1000;
+    const equal = await service.dashboard('live');
+    assert.equal(calls, 3);
+    assert.equal(equal.status, 'live');
+    assert.equal(equal.observedAt, current.observedAt);
+    assert.equal(equal.stats.airborne, 0);
+    assert.deepEqual(equal.flights, []);
+    assert.equal(database.read('live')!.stats.airborne, 0);
+  } finally { database.close(); }
+});
+
 test('API health, demo dashboard and details work locally with validation and without live requests', async () => {
   const database = new FlightDatabase(':memory:');
   let liveCalls = 0;

@@ -4,7 +4,7 @@
 
 ## 1. 既存フォルダーに追加する
 
-ZIP のリンクが開けない場合は、VS Code の既存フォルダーの PowerShell ターミナルで次をまとめて実行します。Git と Node.js 24.5 以上が必要です。
+VS Code の既存フォルダーの PowerShell ターミナルで次をまとめて実行します。Git と Node.js 24.5 以上が必要です。ZIP のダウンロードは不要です。
 
 ```powershell
 & {
@@ -23,15 +23,15 @@ ZIP のリンクが開けない場合は、VS Code の既存フォルダーの P
 
 成功後は手順4の画面確認へ進めます。次回の起動は `npm.cmd run dev` だけです。
 
-**ZIP を利用できる場合の配置方法：**
+**GitHub の ZIP を利用する場合の配置方法：**
 
-1. 配布 ZIP をダウンロードします。
-2. ZIP を開き、中にあるファイルとフォルダーをすべて、既存の `global-flight-monitor` に展開します。
-3. 既存の `.git` は維持します。ZIP には `.git` を含めていません。
-4. すでに同名のソースや設定がある場合は、既存フォルダーをバックアップして置き換える内容を確認します。独自の `.env` や DB はそのまま使います。
+1. [GitHub のリポジトリ](https://github.com/Busaemon/global-flight-monitor)で `main` を選び、「Code」→「Download ZIP」をクリックします。
+2. ZIP を別の場所へ展開し、`global-flight-monitor-main` フォルダーを開きます。
+3. すでに同名のソースや設定がある場合は、既存フォルダーをバックアップして置き換える内容を確認します。独自の `.env` や DB はそのまま使います。
+4. `global-flight-monitor-main` フォルダーの**中身**を、既存の `global-flight-monitor` へコピーします。既存の `.git` は維持します。GitHub の ZIP には Git 履歴を含めていません。
 5. VS Code のエクスプローラーで、直下に `package.json`・`src`・`server`・`docs` が見えることを確認します。
 
-ZIP は親フォルダーを付けない形式です。`global-flight-monitor/global-flight-monitor/package.json` という二重の構成にしないでください。
+`global-flight-monitor-main` フォルダー自体ではなく、中のファイルとフォルダーをコピーします。既存フォルダーの直下に `package.json` がある構成にしてください。
 
 完成後の主な構成は次のとおりです。
 
@@ -91,7 +91,7 @@ npm.cmd run setup
 | 3 | `npm run db:init` | `data/flights.sqlite`・初期テーブル |
 | 4 | `npm run build` | TypeScript の型検査と `dist/` |
 
-設定ファイルの `.env` は必須ではありません。DB はすでに存在すればその内容を保持します。npm キャッシュは通常は OS の一時ディレクトリ内に置き、`NPM_CONFIG_CACHE` が明示されていればその設定を使います。
+設定ファイルの `.env` は必須ではありません。DB はすでに存在すればその内容を保持します。npm キャッシュは `NPM_CONFIG_CACHE`、`npm_config_cache` の順に既存の設定を使い、どちらもない場合は OS の一時ディレクトリ内に置きます。
 
 ## 4. 開発画面を起動する
 

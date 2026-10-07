@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GeoJSON, MapContainer, Marker, Pane, TileLayer, ZoomControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
@@ -13,6 +13,7 @@ import worldLand from './components/world-land';
 const number = new Intl.NumberFormat('ja-JP');
 const MAP_LIMIT = 1200;
 const PAGE_SIZE = 8;
+const WORLD_LAND_STYLE = { color: '#2c475a', weight: .7, fillColor: '#182e40', fillOpacity: .8 };
 const planeSvg = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v-2l-8-5V2.5a1.5 1.5 0 0 0-3 0V8l-8 5v2l8-2.5V18l-2 1.5V21l3.5-1 3.5 1v-1.5L13 18v-5.5z" fill="currentColor"/></svg>';
 
 function utcTime(value: string | number | null, seconds = true) {
@@ -75,6 +76,12 @@ function useDashboard(mode: DataMode, revision: number) {
   return { data: snapshot?.mode === mode ? snapshot : null, loading, error };
 }
 
+const AircraftMarkers = memo(function AircraftMarkers({ flights, icons, onSelect }: {
+  flights: Flight[]; icons: Map<string, L.DivIcon>; onSelect: (id: string) => void;
+}) {
+  return <>{flights.map(flight => <Marker key={flight.icao24} position={[flight.latitude!, flight.longitude!]} icon={icons.get(flight.icao24)} title={`${flightName(flight)} · ${flight.originCountry}`} alt={flightName(flight)} eventHandlers={{ click: () => onSelect(flight.icao24) }} />)}</>;
+});
+
 function MapFocus({ flight, token }: { flight: Flight | null; token: number }) {
   const map = useMap();
   useEffect(() => {
@@ -82,7 +89,6 @@ function MapFocus({ flight, token }: { flight: Flight | null; token: number }) {
       map.flyTo([flight.latitude, flight.longitude], 6, { duration: 1.3 });
     }
     // Recenter is explicit; selecting another flight keeps the global view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, map]);
   return null;
 }
@@ -168,7 +174,6 @@ export default function App() {
   const [revision, setRevision] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [query, setQuery] = useState('');
-  const [airborneOnly, setAirborneOnly] = useState(true);
   const [sort, setSort] = useState('callsign');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -183,7 +188,7 @@ export default function App() {
   const flights = useMemo(() => usable ? data.flights : [], [data, usable]);
   const selected = flights.find(flight => flight.icao24 === selectedId) || null;
   const searchTerm = query.trim().toLowerCase();
-  const filtered = useMemo(() => flights.filter(flight => (!airborneOnly || !flight.onGround) && (!searchTerm || `${flight.callsign} ${flight.icao24} ${flight.originCountry}`.toLowerCase().includes(searchTerm))).sort((a, b) => sort === 'altitude' ? (b.altitudeMeters ?? -1) - (a.altitudeMeters ?? -1) : sort === 'speed' ? (b.velocityMps ?? -1) - (a.velocityMps ?? -1) : flightName(a).localeCompare(flightName(b))), [flights, searchTerm, airborneOnly, sort]);
+  const filtered = useMemo(() => flights.filter(flight => !searchTerm || `${flight.callsign} ${flight.icao24} ${flight.originCountry}`.toLowerCase().includes(searchTerm)).sort((a, b) => sort === 'altitude' ? (b.altitudeMeters ?? -1) - (a.altitudeMeters ?? -1) : sort === 'speed' ? (b.velocityMps ?? -1) - (a.velocityMps ?? -1) : flightName(a).localeCompare(flightName(b))), [flights, searchTerm, sort]);
   const positioned = useMemo(() => filtered.filter(flight => flight.latitude !== null && flight.longitude !== null), [filtered]);
   const mapFlights = useMemo(() => {
     if (positioned.length <= MAP_LIMIT) return positioned;
@@ -201,12 +206,12 @@ export default function App() {
     iconSize: [23, 23], iconAnchor: [11.5, 11.5],
   })])), [mapFlights, selectedId, mode]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  useEffect(() => { setPage(0); }, [query, airborneOnly, sort, mode]);
+  useEffect(() => { setPage(0); }, [query, sort, mode]);
   useEffect(() => { setSelectedId(null); try { localStorage.setItem('skytrace-mode', mode); } catch { /* Storage may be restricted. */ } }, [mode]);
-  function selectFlight(id: string) {
+  const selectFlight = useCallback((id: string) => {
     setSelectedId(id);
     if (window.innerWidth <= 900) setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 20);
-  }
+  }, []);
   function changeMode(next: DataMode) { if (next !== mode) { setMode(next); setQuery(''); } }
   const statusLabel = loading && !data ? '接続中' : status === 'live' ? 'ライブ受信中' : status === 'demo' ? 'デモデータ' : status === 'stale' ? '最終取得データ' : '受信できません';
   const statValue = (value: number | null | undefined) => usable && value !== undefined && value !== null ? number.format(value) : '—';
@@ -239,11 +244,11 @@ export default function App() {
         <div className="map-and-detail"><div className="map-frame">
           <MapContainer center={[28, 10]} zoom={2} minZoom={0} maxZoom={12} zoomSnap={.5} zoomControl={false} scrollWheelZoom={false} worldCopyJump attributionControl className="flight-map">
             <Pane name="offline-land" style={{ zIndex: 190 }}>
-              <GeoJSON data={worldLand} pane="offline-land" interactive={false} style={{ color: '#2c475a', weight: .7, fillColor: '#182e40', fillOpacity: .8 }} attribution='<a href="https://www.naturalearthdata.com/">Natural Earth</a>' />
+              <GeoJSON data={worldLand} pane="offline-land" interactive={false} style={WORLD_LAND_STYLE} attribution='<a href="https://www.naturalearthdata.com/">Natural Earth</a>' />
             </Pane>
             <TileLayer url="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' eventHandlers={{ tileerror: () => setTileError(true) }} />
             <ZoomControl position="bottomleft" /><MapSizeSync /><MapFocus flight={selected} token={focusToken} />
-            {mapFlights.map(flight => <Marker key={flight.icao24} position={[flight.latitude!, flight.longitude!]} icon={icons.get(flight.icao24)} title={`${flightName(flight)} · ${flight.originCountry}`} alt={flightName(flight)} eventHandlers={{ click: () => selectFlight(flight.icao24) }} />)}
+            <AircraftMarkers flights={mapFlights} icons={icons} onSelect={selectFlight} />
           </MapContainer>
           <div className="map-label"><span className="status-dot" /><span>{mode === 'demo' ? 'DEMO AIRSPACE' : 'GLOBAL AIRSPACE'}</span><strong>{number.format(mapFlights.length)} <small>機を表示</small></strong></div>
           {loading && !usable && <div className="map-message"><div className="radar-loader"><Radio size={27} /></div><strong>空の状況を取得しています</strong><span>世界の航空機データに接続中</span></div>}
@@ -261,7 +266,7 @@ export default function App() {
       </section>
 
       <section className="flights-panel" id="flight-list" aria-label="フライト一覧"><div className="panel-heading list-heading"><div className="section-title"><Plane size={17} /><h2>フライト一覧</h2><span className="list-count">{number.format(filtered.length)}</span></div><span className="list-subtitle">気になるフライトを見つけよう</span></div>
-        <div className="list-toolbar"><div className="search-field"><Search size={16} /><input aria-label="フライトを検索" placeholder="便名・ICAO・登録国で検索" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" onClick={() => setQuery('')} aria-label="検索をクリア"><X size={14} /></button>}</div><div className="list-filters"><div className="filter-switch" role="group" aria-label="飛行状態の絞り込み"><button className={airborneOnly ? 'active' : ''} aria-pressed={airborneOnly} onClick={() => setAirborneOnly(true)}>飛行中</button><button className={!airborneOnly ? 'active' : ''} aria-pressed={!airborneOnly} onClick={() => setAirborneOnly(false)}>すべて</button></div><label className="sort-select"><SlidersHorizontal size={14} /><select aria-label="並び順" value={sort} onChange={event => setSort(event.target.value)}><option value="callsign">便名順</option><option value="altitude">高度が高い順</option><option value="speed">速度が速い順</option></select></label></div></div>
+        <div className="list-toolbar"><div className="search-field"><Search size={16} /><input aria-label="フライトを検索" placeholder="便名・ICAO・登録国で検索" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" onClick={() => setQuery('')} aria-label="検索をクリア"><X size={14} /></button>}</div><div className="list-filters"><label className="sort-select"><SlidersHorizontal size={14} /><select aria-label="並び順" value={sort} onChange={event => setSort(event.target.value)}><option value="callsign">便名順</option><option value="altitude">高度が高い順</option><option value="speed">速度が速い順</option></select></label></div></div>
         <div className="table-wrap"><table><thead><tr><th>フライト / ICAO24</th><th>登録国（推定）</th><th>高度 <span>m</span></th><th>対地速度 <span>km/h</span></th><th>地上航跡</th><th>受信状況</th><th><span className="sr-only">詳細</span></th></tr></thead><tbody>{rows.map(flight => <tr key={flight.icao24} className={selectedId === flight.icao24 ? 'selected-row' : ''} onClick={() => selectFlight(flight.icao24)}><td><button className="flight-row-button" onClick={() => selectFlight(flight.icao24)} aria-label={`${flightName(flight)} の詳細を表示`}><span className="row-plane"><Plane size={16} /></span><span><strong>{flightName(flight)}</strong><small>{flight.icao24.toUpperCase()}</small></span></button></td><td><span className="country-label">{flight.originCountry}</span></td><td className="numeric">{meters(flight.altitudeMeters)}</td><td className="numeric">{speed(flight.velocityMps)}</td><td className="numeric heading-value">{flight.headingDegrees === null ? '—' : `${Math.round(flight.headingDegrees)}°`}<ArrowUpRight size={12} style={{ transform: `rotate(${(flight.headingDegrees ?? 0) - 45}deg)` }} /></td><td><span className={`contact-status ${flight.onGround ? 'ground' : ''}`}><span />{age(flight.lastContact, now)}</span></td><td><ChevronRight size={15} className="row-chevron" /></td></tr>)}</tbody></table>
           {rows.length === 0 && <div className="table-empty"><Search size={24} /><strong>{loading ? 'フライトを取得しています' : usable ? '一致するフライトがありません' : 'まだフライトデータがありません'}</strong><span>{usable ? '便名や登録国で検索してみてください。' : 'ライブデータの接続を確認するか、デモモードをお試しください。'}</span></div>}
         </div>
