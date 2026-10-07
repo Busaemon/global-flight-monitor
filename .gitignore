@@ -1,9 +1,12 @@
 node_modules/
 dist/
+dist-server/
+.tmp/
 data/
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.log
 playwright-report/
 test-results/

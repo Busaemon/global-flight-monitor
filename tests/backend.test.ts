@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { createApp } from '../server/app.ts';
 import { FlightDatabase, type StoredSnapshot } from '../server/database.ts';
 import { LIVE_COVERAGE, LIVE_SOURCE, OpenSkyProvider, ProviderError, parseOpenSky,
@@ -133,6 +134,125 @@ test('SQLite rolls back an invalid replacement instead of losing the saved snaps
     assert.deepEqual(database.read('live'), saved);
     assert.deepEqual(database.history('live'), [{ observedAt: saved.observedAt!, airborne: 1 }]);
   } finally { database.close(); }
+});
+
+test('SQLite v1 migrates to v2 without losing snapshots, flights or history', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'skytrace-migration-test-'));
+  const path = join(directory, 'flights.sqlite');
+  const saved = snapshot('live');
+  try {
+    const initial = new FlightDatabase(path);
+    initial.save(saved);
+    initial.close();
+    // Version 1 has exactly the current schema without the new provider_state table.
+    const version1 = new DatabaseSync(path);
+    version1.exec('DROP TABLE provider_state; PRAGMA user_version = 1;');
+    version1.close();
+    const migrated = new FlightDatabase(path);
+    try {
+      assert.deepEqual(migrated.read('live'), saved);
+      assert.deepEqual(migrated.history('live'), [{ observedAt: saved.observedAt!, airborne: 1 }]);
+      assert.equal(migrated.providerState(), null);
+      migrated.saveProviderState({ nextAttemptAt: NOW + 180000, lastError: 'Rate limited' });
+      assert.deepEqual(migrated.providerState(), { nextAttemptAt: NOW + 180000, lastError: 'Rate limited' });
+    } finally { migrated.close(); }
+    const check = new DatabaseSync(path);
+    assert.equal((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 2);
+    check.close();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a rate-limit cooldown without any saved snapshot survives database and service restart', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'skytrace-cooldown-test-'));
+  const path = join(directory, 'flights.sqlite');
+  let database: FlightDatabase | undefined;
+  let now = NOW;
+  let calls = 0;
+  const provider: FlightProvider = { fetchObservation: async () => {
+    calls++;
+    if (calls === 1) throw new ProviderError('Rate limited', 180);
+    return observation([], Math.floor(now / 1000));
+  } };
+  try {
+    database = new FlightDatabase(path);
+    const first = new FlightService(database, { now: () => now, provider, pollIntervalSeconds: 60 });
+    const unavailable = await first.dashboard('live');
+    assert.equal(unavailable.status, 'unavailable');
+    assert.equal(database.read('live'), null);
+    assert.equal(database.providerState()!.nextAttemptAt, NOW + 180000);
+    await first.stop();
+    database.close();
+    database = new FlightDatabase(path);
+    now += 179000;
+    const restarted = new FlightService(database, { now: () => now, provider, pollIntervalSeconds: 60 });
+    const retained = await restarted.dashboard('live');
+    assert.equal(retained.status, 'unavailable');
+    assert.equal(retained.message, 'Rate limited');
+    assert.equal(retained.nextRefreshAt, unavailable.nextRefreshAt);
+    assert.equal(calls, 1);
+    now += 1000;
+    const recovered = await restarted.dashboard('live');
+    assert.equal(recovered.status, 'live');
+    assert.equal(recovered.stats.airborne, 0);
+    assert.equal(calls, 2);
+    assert.equal(database.providerState()!.lastError, null);
+    await restarted.stop();
+  } finally { database?.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('background start shares an in-flight API fetch and stop waits for persistence before database close', async () => {
+  const database = new FlightDatabase(':memory:');
+  let calls = 0;
+  let release!: (value: Observation) => void;
+  const pending = new Promise<Observation>(resolve => { release = resolve; });
+  const service = new FlightService(database, {
+    now: () => NOW, pollIntervalSeconds: 60,
+    provider: { fetchObservation: async () => { calls++; return pending; } },
+  });
+  try {
+    service.start();
+    service.start();
+    const summary = service.summary('live');
+    assert.equal(calls, 1);
+    let stopped = false;
+    const stop = service.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    assert.equal(stopped, false);
+    release(observation());
+    const [result] = await Promise.all([summary, stop]);
+    assert.equal(result.status, 'live');
+    assert.equal(stopped, true);
+    assert.equal(calls, 1);
+    assert.equal(database.read('live')!.flights.length, 1);
+    assert.equal(database.history('live').length, 1);
+  } finally { await service.stop(); database.close(); }
+});
+
+test('background collection refreshes due live history without browser traffic and stops its timer', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const database = new FlightDatabase(':memory:');
+  let now = NOW;
+  let calls = 0;
+  const service = new FlightService(database, {
+    now: () => now, pollIntervalSeconds: 60,
+    provider: { fetchObservation: async () => { calls++; return observation([], Math.floor(now / 1000)); } },
+  });
+  try {
+    service.start();
+    await service.summary('live');
+    assert.equal(calls, 1);
+    now += 60000;
+    t.mock.timers.tick(60000);
+    // Wait for the background provider/persistence promises, without a browser/API read.
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(calls, 2);
+    assert.equal(database.history('live').length, 2);
+    await service.stop();
+    now += 60000;
+    t.mock.timers.tick(60000);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(calls, 2);
+  } finally { await service.stop(); database.close(); t.mock.timers.reset(); }
 });
 
 test('concurrent dashboard and detail requests share one fetch and honor the polling cache', async () => {
@@ -329,7 +449,7 @@ test('API health, demo dashboard and details work locally with validation and wi
   try {
     const health = await fetch(`${base}/api/health`);
     assert.equal(health.status, 200);
-    assert.equal(health.headers.get('cache-control'), 'no-store');
+    assert.equal(health.headers.get('cache-control'), 'private, no-cache, must-revalidate');
     assert.equal(health.headers.get('x-powered-by'), null);
     assert.equal((await health.json() as { database: string }).database, 'ready');
 

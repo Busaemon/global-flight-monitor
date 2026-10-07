@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: セキュリティの報告手順
+    url: https://github.com/Busaemon/global-flight-monitor/blob/main/SECURITY.md
+    about: 脆弱性や秘密の値を公開 Issue に貼る前に、報告経路を確認してください。

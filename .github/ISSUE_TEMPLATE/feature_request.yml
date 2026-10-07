@@ -1,21 +1,24 @@
-name: 機能提案
-description: 目的と完成条件をまとめる
+name: 機能・改善の提案
+description: 利用場面と完成条件をまとめる
 labels: [enhancement]
 body:
   - type: textarea
     id: purpose
     attributes:
-      label: 解決したいこと
+      label: 誰がどの場面で困っているか
     validations:
       required: true
   - type: textarea
     id: behavior
     attributes:
-      label: 希望する機能・操作
+      label: 希望する動作
+      description: スマートフォン、通信量、読みやすさ、読み上げなどの条件があれば記載します。
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 完成したと判断する条件
-      description: 要件定義やロードマップの関連番号があれば記載してください。
+      description: 関連する要件番号、データ提供元の利用枠、必要な公開設定があれば記載します。
+    validations:
+      required: true

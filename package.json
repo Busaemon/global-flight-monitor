@@ -1,6 +1,7 @@
 {
   "name": "global-flight-monitor",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "OpenSkyの実測航空機を確認できる、軽量なWeb・PWAモニター",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,15 +12,19 @@
     "dev": "concurrently -k -n api,web -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "node --use-env-proxy --import tsx --watch server/index.ts",
     "dev:web": "vite --host 0.0.0.0",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.build.json && node scripts/build-service-worker.mjs && npm run check:bundle",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
-    "start": "node --use-env-proxy --import tsx server/index.ts",
+    "start": "node --use-env-proxy dist-server/server/index.js",
     "db:init": "tsx server/init-db.ts",
     "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
+    "compression": "^1.8.2",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
@@ -32,7 +37,9 @@
     }
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/leaflet": "^1.9.20",
     "@types/node": "^24.0.0",

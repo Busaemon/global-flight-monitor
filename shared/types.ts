@@ -45,3 +45,34 @@ export interface FlightDetailResponse {
   fetchedAt: string | null;
   observedAt: string | null;
 }
+/** Summary counts always cover the complete observation, independent of search or map bounds. */
+export type DashboardSummaryResponse = Omit<DashboardResponse, 'flights'>;
+export type FlightSort = 'callsign' | 'altitude' | 'speed';
+export type MapBounds = [west: number, south: number, east: number, north: number];
+export interface FlightListResponse {
+  mode: DataMode;
+  source: string;
+  observedAt: string | null;
+  fetchedAt: string | null;
+  flights: Flight[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+export interface MapFlight {
+  icao24: string;
+  callsign: string;
+  originCountry: string;
+  latitude: number;
+  longitude: number;
+  headingDegrees: number | null;
+}
+export interface FlightMapResponse {
+  mode: DataMode;
+  observedAt: string | null;
+  fetchedAt: string | null;
+  flights: MapFlight[];
+  total: number;
+  sampled: boolean;
+}

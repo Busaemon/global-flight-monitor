@@ -1,6 +1,6 @@
 # データベース設計書
 
-この文書は [server/database.ts](../server/database.ts) に実装されている SQLite スキーマと保存処理を説明します。スキーマのバージョンは `PRAGMA user_version = 1` です。
+この文書は [server/database.ts](../server/database.ts) に実装されている SQLite スキーマと保存処理を説明します。スキーマのバージョンは `PRAGMA user_version = 2` です。v1 の観測テーブルを保持して取得期限のテーブルを追加します。
 
 ## 1. 保存方式と初期化
 
@@ -17,7 +17,7 @@
 | 時刻 | UTC の ISO 8601 文字列。例: `2026-10-08T00:00:00.000Z` |
 | Git | `data/` 全体を対象外とする |
 
-ファイルの親ディレクトリがなければ作成します。初期化は観測データの取得やデモ機体の登録を行いません。繰り返し初期化しても、バージョン 1 の既存 DB はそのまま使用します。バージョンが 1 より新しい DB は、古いアプリで誤って操作しないよう起動に失敗します。
+ファイルの親ディレクトリがなければ作成します。初期化は観測データの取得やデモ機体の登録を行いません。繰り返し初期化しても v2 の既存 DB はそのまま使用します。v1 はトランザクションで `provider_state` を追加して v2 へ移行し、観測・機体・履歴を保持します。v2 より新しい DB は誤操作を避けるため起動に失敗します。移行前にバックアップを取得し、v2 移行後に旧 v1 のアプリへ直接戻さないでください。
 
 テストでは `:memory:` を使えます。この場合はファイル作成と WAL 設定を行いません。テーブルは `STRICT` 指定ではありません。数値・日付形式・識別子形式の検証は主にアプリケーション側で行います。
 
@@ -28,8 +28,9 @@
 | `snapshots` | 最新の取得時刻・観測時刻・統計 | `live` / `demo` 各 1 行 |
 | `current_flights` | 最新スナップショットの飛行中の機体 | 対象モードを一括置換 |
 | `count_history` | 観測時刻ごとの飛行中の機数 | モードごとに保存時の直近 24 時間 / 最大 1,440 点 |
+| `provider_state` | OpenSky の次回取得期限と失敗の説明 | プロバイダーごとに 1 行。スナップショットがなくても保存 |
 
-ライブとデモは全テーブルの主キーに `mode` を含め、別のレコードとして保存します。同じ ICAO24 が両方のモードにあっても別レコードです。履歴に保存するのは機数であり、過去の機体位置や機体ごとの航跡ではありません。
+ライブとデモの観測用 3 テーブルは主キーに `mode` を含め、別のレコードとして保存します。`provider_state` は実データの外部取得専用で、デモの期限とは共用しません。同じ ICAO24 が両方のモードにあっても別レコードです。履歴に保存するのは機数であり、過去の機体位置や機体ごとの航跡ではありません。
 
 ```mermaid
 erDiagram
@@ -67,6 +68,11 @@ erDiagram
         TEXT mode PK
         TEXT observed_at PK
         INTEGER airborne
+    }
+    provider_state {
+        TEXT provider PK
+        INTEGER next_attempt_at
+        TEXT last_error
     }
 ```
 
@@ -131,7 +137,7 @@ erDiagram
 
 ## 6. 実装している SQL
 
-以下はスキーマの実体です。通常はこの SQL を手動実行せず、`npm run db:init` またはサーバー起動で作成します。
+以下は v2 のテーブル定義です。新規 DB は v1 の 3 テーブルを作成後、別トランザクションで取得期限のテーブルを追加します。通常はこの SQL を手動実行せず、`npm run db:init` またはサーバー起動で作成します。
 
 ```sql
 CREATE TABLE snapshots (
@@ -176,7 +182,13 @@ CREATE TABLE count_history (
 CREATE INDEX history_mode_time
   ON count_history(mode, observed_at DESC);
 
-PRAGMA user_version = 1;
+CREATE TABLE provider_state (
+  provider TEXT PRIMARY KEY CHECK (provider = 'opensky'),
+  next_attempt_at INTEGER NOT NULL CHECK (next_attempt_at >= 0),
+  last_error TEXT
+);
+
+PRAGMA user_version = 2;
 ```
 
 ## 7. 保存時の一貫性
@@ -200,17 +212,27 @@ PRAGMA user_version = 1;
 
 API が返す `history` はライブ・デモとも直近最大 360 点です。デモの履歴を実測履歴へコピーする処理はありません。
 
-## 9. 再起動後の復元
+## 9. provider_state と再起動後の復元
 
-サービス起動時に `live` と `demo` のスナップショット・機体を読み出します。ライブについては、保存された `fetched_at` に現在の `POLL_INTERVAL_SECONDS` を加えて次の取得期限を復元します。取得失敗時の追加待機状態や OAuth トークンは DB に保存しません。
+| カラム | SQLite 型 | NULL | 制約・意味 |
+| --- | --- | --- | --- |
+| `provider` | TEXT | `NOT NULL` 明記なし | 主キー、`CHECK (provider = 'opensky')`。アプリは固定値だけ保存 |
+| `next_attempt_at` | INTEGER | 不可 | Unix 時刻のミリ秒。0 以上。次に外部取得を試せる期限 |
+| `last_error` | TEXT | 可 | 表示用の失敗の説明。成功時は NULL。OAuth 資格情報やトークンは保存しない |
 
-`current_flights` の読み出しは ICAO24 順です。ライブの保存状態は再起動直後に古いデータとして表示し、新規取得に成功するとライブへ戻ります。デモは新しい要求で再生成します。
+外部取得の開始、成功、失敗 / 429 に対応する次回期限を保存します。観測スナップショットのトランザクションとは別の UPSERT です。429 や初回取得失敗で観測データがなくても、期限が残るため再起動による即時の再試行を避けます。
+
+サービス起動時に `live` / `demo` の現在値を読み出し、ライブは保存した `fetched_at` と設定間隔、`provider_state.next_attempt_at` の遅い方を用いて期限を復元します。OAuth トークンは DB に保存せず再取得します。保存済み観測の表示には鮮度 / 状態を伴います。
+
+取得枠の管理は単一プロセスを前提とします。同じ DB を複数のサーバーで共有しても、外部取得の排他ジョブを提供する意味ではありません。本番のバックグラウンド更新も通常の要求と同じ期限を使用します。
 
 ## 10. データファイルの取り扱い
 
 `data/flights.sqlite` はアプリ本体とは別の運用データです。更新時に消すと、保存済み機体と実測履歴を失います。新しいアプリのファイルを既存フォルダーへ追加する際も、既存の `data/` と `.env` を保持します。
 
 WAL 使用中は `flights.sqlite-wal` と `flights.sqlite-shm` が存在することがあります。稼働中にこれらを個別に削除したり、DB 本体だけをコピーしてバックアップ完了と判断したりしません。簡単なローカルバックアップは、API を正常終了して DB 接続を閉じた後に、残存する関連ファイルも確認して保存します。稼働中のバックアップが必要な場合は SQLite の正式なバックアップ手段を使います。
+
+Docker / Compose の保存先は `/app/data/flights.sqlite` を永続 volume に割り当てます。コンテナーの削除と volume の削除は別で、`docker compose down -v` は DB を失うため通常の停止で使いません。
 
 Node.js の SQLite API を利用するため、`sqlite3` CLI の別途インストールは通常起動に不要です。スキーマ変更は `user_version` と移行処理の追加を伴う別の変更として実施し、既存 DB を無断で作り直さないようにします。
 

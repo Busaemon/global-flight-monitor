@@ -1,127 +1,110 @@
 # テスト仕様書
 
-対象は現行の SKYTRACE 初版です。ソースを根拠に、観測値の集計、DB 保存、API、画面の表示を検証します。受入判断では実データの件数を固定しません。世界の全機体数や、通信失敗時の 0 件を正しい実測値として扱わないことを重視します。
+対象は SKYTRACE Web / PWA v0.2.0。観測の正確な区別、ページ / 範囲 API、保存期限、HTTP の安全性、スマートフォンと PWA を検証する。件数が常に特定の値になることは受入条件にしない。
 
-## 実行方法と検証済み範囲
-
-プロジェクトのルートで実行します。
+## 1. 実行
 
 ```powershell
-# Windows では npm / npx の代わりに npm.cmd / npx.cmd を使用できます。
-npm ci
-npm test
-npm run build
-npx playwright install chromium
-npm run test:e2e
+# Windows。macOS / Linux は npm / npx を使用
+npm.cmd ci
+npm.cmd test
+npm.cmd run build
+npm.cmd audit --audit-level=high
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
 ```
 
-`npm run build` はフロントとサーバーの TypeScript 型チェックも実施します。Playwright は未起動なら `npm run dev` を起動します。すでに開発サーバーを使っている場合は、同じコードと DB 設定か確認してください。
+`build` はフロント / サーバーの型検査、Vite、コンパイル済みサーバー、Service Worker の生成、サイズ予算を含む。`check:bundle` は生成済みビルドの予算を単独で再確認する。`test:e2e` の前に `build` を成功させる。ブラウザー検証は Playwright 設定に従って開発 5173 と本番 PWA 3173 のローカルサーバーを起動する。PWA 用はコンパイル済み Express、`NODE_ENV=production`、`BACKGROUND_REFRESH=false`、ループバックの PUBLIC_ORIGIN、独立したテスト DB を使用する。外部タイルや OpenSky は主に固定した応答にし、利用枠を消費する試験と分ける。
 
-| 検証項目 | 記録済みの結果 | 条件と限界 |
-| --- | --- | --- |
-| バックエンド自動テスト | 21 件成功 | Linux、Node.js 24.19.0。16 個のトップレベルテストと 5 個のサブテスト |
-| ブラウザー自動テスト | 9 件成功 | Linux、システム Chromium。主に固定 API 応答を使用 |
-| 型チェック・本番ビルド | 成功 | `npm run build` |
-| 依存パッケージ監査 | 検出 0 件 | 開発用依存を含む `npm audit`。確認時点の登録済みアドバイザリーに基づく |
-| 匿名 OpenSky 取得 | 成功 | 約 1.1 万機の観測を取得した時点の確認。将来の件数・接続成功を保証しない |
-| API 手動確認・DB 再起動 | 確認済み | ローカル HTTP と保存済み実データの再読込 |
-| Windows / PowerShell | 未実行 | 現クラウドに PowerShell がない。以下の手動受入項目を利用者の PC で確認する |
-| 実 OAuth 資格情報 | 未検証 | トークン取得・更新はモックで検証。利用者のクライアントによる接続確認は別途必要 |
+## 2. バックエンド検証
 
-これは今回の実行記録です。コード変更後は再実行し、結果と実行環境を更新してください。
+| ソース | 重要な検証 |
+| --- | --- |
+| [backend.test.ts](../tests/backend.test.ts) | 観測ベクトルの通信 / 位置の鮮度、地上の除外、欠損、重複、単位、正常空観測と不正応答 |
+| 同上 | SQLite の再オープン、live / demo 分離、失敗時 rollback、v1→v2 で観測 / 機体 / 履歴を保持 |
+| 同上 | 同時の API / 背景取得の共用、ポーリング期限、保存済み stale、未取得 unavailable、デモの自動代用なし |
+| 同上 | 保存済みより古い観測の拒否、同じ時刻の正常な 0 件、429 ヘッダー、初回失敗時の期限を再起動後に維持 |
+| 同上 | OAuth client_credentials、トークンの期限、401 後の一回更新、秘密の応答混入防止（モック） |
+| 同上 | 閲覧者なしの背景更新で履歴保存、停止後のタイマー解除、実行中保存を待って DB を閉じる |
+| [api.test.ts](../tests/api.test.ts) | summary から全機体を除外し全体集計を保持、一覧のページ / 検索 / sort / NULL 後方 |
+| 同上 | 地図の範囲 / 日付変更線 / 位置欠損 / 検索 / selected / 最大 1,000 件 / 安定したサンプル |
+| 同上 | 1,305 機の固定データで summary が旧全件 API の 1/100 未満。実回線の応答速度の保証ではない |
+| 同上 | 未対応 / 重複 / 不正クエリを外部取得前に拒否、ETag の再検証で鮮度を確認、gzip |
+| 同上 | HTML / ハッシュ付き assets のキャッシュ、SPA と不存在ファイルの 404 |
+| [security.test.ts](../tests/security.test.ts) | CSP / frame / permissions / referrer、安全な local と HTTPS production の HSTS 差 |
+| 同上 | 不正な origin / proxy / 制限の設定を起動時に拒否、書込メソッド / 外 origin / 長大クエリを拒否 |
+| 同上 | API 枠と retry 案内、health の除外、弱い / リスト ETag・HEAD・変更された本文、gzip と validator |
 
-## バックエンドの自動テスト
+これらは単体 / ローカル HTTP の検証で、公開先の侵入テストや外部サービスの SLA 検証ではない。
 
-ソース: [`tests/backend.test.ts`](../tests/backend.test.ts)。B01～B16 はソース内のトップレベル `test()` と対応します。
+## 3. ブラウザー検証
 
-| ID | ソース内のテスト名 | 主な確認内容 |
-| --- | --- | --- |
-| B01 | `state vectors retain airborne aircraft with missing or old positions while excluding old contacts and ground aircraft` | 通信が新しい飛行中機体を集計。位置欠損・古い位置は地図から除外。地上・古い通信は集計対象外 |
-| B02 | `parser validates measurements, normalizes identifiers, and keeps the latest contact per aircraft` | ICAO24 正規化、便名の空白除去、測定値の検証、機体重複時の最新値採用 |
-| B03 | `empty OpenSky state sets represent a legitimate zero, while malformed payloads fail explicitly` | 正常な空の観測は 0。不正応答は明示的なエラー |
-| B04 | `SQLite survives reopen and isolates live and demo snapshots, aircraft, and count history` | ファイル DB の再オープン、ライブ・デモの機体と履歴の分離 |
-| B05 | `SQLite rolls back an invalid replacement instead of losing the saved snapshot` | 重複キーによる保存失敗で、以前のデータと履歴を保護 |
-| B06 | `concurrent dashboard and detail requests share one fetch and honor the polling cache` | 同時リクエストの取得共用、更新期限、履歴保存 |
-| B07 | `a provider failure returns the last persisted live snapshot as stale and observes retry backoff` | 外部取得失敗時に保存済み実データを古いデータとして返し、再試行まで待機 |
-| B08 | `a missing live snapshot is unavailable on failure and never substitutes demo aircraft` | 実データ未保存の取得失敗は取得不可。デモを実データとして返さない |
-| B09 | `restarting the service reuses the persisted polling deadline instead of fetching immediately` | 再起動でも前回取得時刻に基づく待機を継続 |
-| B10 | `a successful observation becomes stale after 120 seconds while still respecting a longer API polling interval` | 観測が 120 秒を超えると古い状態になり、長い取得間隔は維持 |
-| B11 | `outdated upstream observation timestamps cannot overwrite a good stored snapshot` | 古い観測応答で正常な保存値を上書きしない |
-| B12 | `API health, demo dashboard and details work locally with validation and without live requests` | health、デモ一覧・詳細、大小文字 ICAO24、400 / 404、デモで外部取得なし |
-| B13 | `OpenSky rate-limit response headers impose a cooldown before another upstream request` | 429 ヘッダーによる待機と、期限後の取得再開 |
-| B14 | `OAuth credentials use the token endpoint and cache an expiring token without exposing it in responses` | 模擬資格情報で client_credentials、期限付きトークン再利用、応答へのトークン混入防止 |
-| B15 | `an OAuth 401 refreshes the rejected token once, with bounded retries for permanent rejection` | 拒否されたトークンを一度更新し、無制限に再試行しない |
-| B16 | `regressing observations preserve the latest snapshot, while an equal timestamp can report zero aircraft` | 鮮度期限内でも保存済みより古い観測を拒否し、値と DB・再試行間隔を保持。同じ観測時刻の正常な 0 機は受け入れる |
+[dashboard.spec.ts](../tests/e2e/dashboard.spec.ts) は実デモの件数と詳細、地図 / 一覧からの選択、サーバー検索、390 px 表示、明示的なモード、遅延応答の分離、観測と取得時刻、応答待ち中の期限切れ、通信断の扱いを確認する。
 
-B13 のサブテストは `x-rate-limit-retry-after-seconds: 120`、`retry-after: 180`、HTTP 日付の `retry-after` の 3 件です。B15 は `success after token refresh` と `permanently rejected` の 2 件です。
+[production.spec.ts](../tests/e2e/production.spec.ts) は通常 URL の初期ライブ、旧デモ保存設定の扱い、キーボードの選択 / 詳細 / フォーカス、アクセシビリティ、非表示タブのポーリング抑制を確認する。テストの対象 / 条件はソースと Playwright の project を根拠にする。
 
-## ブラウザーの自動テスト
+本番 PWA の検証は `tests/e2e/pwa.spec.ts` で、Service Worker のインストール、オフラインの画面起動、API / 外部タイルを保存しないこと、明示的な更新を確認する。ローカルの安全なループバックでの Chromium 検証で、実公開ドメインやスマートフォンのインストールとは別。
 
-ソース: [`tests/e2e/dashboard.spec.ts`](../tests/e2e/dashboard.spec.ts)。各テストの終了時にブラウザーの未処理エラーがないことも確認します。
+画面の未処理エラーを確認し、通信モックの利用を明記する。axe は WCAG 2 A / AA、2.1 AA、2.2 AA と best practice を対象に、desktop live / mobile 390 px 詳細 / mobile live 取得不可の 3 場面で除外なし 0 violations を確認した。これは自動検査の対象内の結果で、読み上げの使いやすさや WCAG 全体への適合を認証したことにはしない。
 
-| ID | ソース内のテスト名 | 主な確認内容 |
-| --- | --- | --- |
-| E01 | `real demo API renders the same aircraft count and supports detail selection` | 実際のローカルデモ API の件数と UI が一致し、詳細を開ける |
-| E02 | `map and list selection show aircraft details; search covers callsign, ICAO and country` | 地図・一覧から選択、詳細の高度・速度、3 種類の検索、検索クリア、該当なし |
-| E03 | `390px mobile layout stays within the page width and supports search and details` | 390 px 幅で横はみ出しがなく、検索・詳細表示・閉じる操作が可能 |
-| E04 | `unavailable live data shows an unknown count and requires explicit demo selection` | 未取得は `—機`。利用者が選択したときだけデモ表示 |
-| E05 | `rapid mode switching cannot display delayed responses under the wrong mode` | 遅延応答がライブ・デモの高速切替後に混入しない |
-| E06 | `stale live observations retain their observation time separately from fetch time` | 古い状態と観測時刻・取得時刻を区別して表示 |
-| E07 | `a live observation expires locally while the next API request is still pending` | 次の応答待ちでも時間経過でライブ表示が古い状態に変わる |
-| E08 | `live mode retains its own last observation when the API disconnects` | 通信切断後もライブの最後の観測を古い状態で保持 |
-| E09 | `demo mode retains its own last observation when the API disconnects` | 通信切断後もデモの最後の観測とデモ表示を保持 |
+## 4. GitHub CI
 
-E02～E09 のダッシュボード応答はモックです。地図タイルも固定画像に置き換えるため、外部地図サービスの稼働は検証しません。E01 はライブ応答を取得不可に差し替え、デモ API を実際に呼び出します。
+`.github/workflows/ci.yml` が lockfile 導入、全依存の監査、backend、build / 予算、Chromium を実行する。権限は contents: read、Action は commit 固定。失敗時の診断は 7 日保存。CI 定義を追加したことと GitHub 上の実行成功は分け、Actions の結果を PR で確認する。
 
-## Windows の手動受入
-
-[Windows 導入手順](09-windows-setup.md)で導入し、VS Code の PowerShell から確認します。期待値を満たさない場合はエラー全文と Node.js のバージョンを記録し、秘密の値を伏せてください。
+## 5. 手動受入
 
 | ID | 操作 | 合格条件 |
 | --- | --- | --- |
-| M01 | `node --version`、初期化、`npm run dev`、`http://localhost:5173` を開く | Node.js 24.5.0 以上。DB を作成し、API と画面が起動する |
-| M02 | 「デモ」を選び、一覧の件数・地図・履歴を見る | デモの表示があり、架空の機体が表示される。件数をライブとして扱わない |
-| M03 | 便名、ICAO24、登録国で検索し、地図と一覧から詳細を開く | 検索結果が一致。高度 m、速度 km/h、位置、識別子を表示。高度・速度の欠損は `—`、位置の欠損は「未取得」 |
-| M04 | 「ライブ」を選ぶ。匿名 API が使える状態で待つ | OpenSky の出典と観測時刻が表示される。件数は変動してよく、世界の正確な全機体数とは表示しない |
-| M05 | 観測から 120 秒超、次回外部更新まで待つ | 保存済みの機体数を保ち、「最終取得データ」と古い観測時刻を表示する |
-| M06 | 起動ターミナルでこのアプリを停止し、画面の更新を押す | 既存観測は古いデータとして残る。未取得状態は `—機`。自動でデモへ切り替わらない |
-| M07 | DB の保存後にこのアプリを再起動し、同じモードで開く | 保存済み機体と履歴を読める。前回の取得期限を無視して外部取得を繰り返さない |
-| M08 | 開発者ツールで幅を 390 px にし、検索・詳細を操作 | 横幅に収まり、主要操作ができる |
-| M09 | 開発者ツールで CARTO タイルの通信だけを遮断し、地図を再表示 | 同梱 Natural Earth の簡易陸地と機体を表示。地図通信失敗の案内が出る |
-| M10 | `npm run build` 後に開発サーバーを停止し、`npm start`、`http://localhost:3001` を開く | 単一 API サーバーから画面と API を配信する |
-| M11 | 8 件を超えるデモ一覧で次・前ページを操作し、高度順・速度順を選ぶ。その後検索・モードを変更する | 1 ページ最大 8 件、各並び順に従う。検索やモードの変更で先頭ページに戻る |
+| M01 | Windows / Node 24.5+ で既存フォルダーへ配置 / setup / dev | .git / .env / DB / 独自ファイルを保持。初回依存と DB / 型 / ビルドに成功 |
+| M02 | 通常 URL と明示 demo | 通常は実データ。demo は合成で表示。実取得失敗を demo や正しい 0 件にしない |
+| M03 | callsign / ICAO24 / 登録国、並び順、ページ | ページ単位、標準 8 件、NULL 後方、条件変更で先頭、該当なしと通信エラーを区別 |
+| M04 | 地図の移動 / 選択 / 日付変更線 | 範囲内の位置、上限とサンプル数、一覧からも詳細に到達、集計は全観測 |
+| M05 | 詳細と欠損 | m / km/h / m/s / °、登録国、時刻、欠損を — / 未取得と表示。ルートなどを推測しない |
+| M06 | 観測 120 秒超、通信断、未取得 | 最終観測の状態と時刻を保持。現在の実測と誤認させず、不明を 0 としない |
+| M07 | CARTO の通信を遮断 | 同梱陸地と案内、帰属維持。観測 API と障害を区別 |
+| M08 | 実スマートフォン、320 px、200% 文字 / zoom | 主要操作、表示幅、タップ、地図 / 詳細が利用可能 |
+| M09 | キーボード / 読み上げ / 動き軽減 | 見えるフォーカス、操作とラベル、詳細の閉じる / 戻る、必要な状態通知 |
+| M10 | HTTPS で iPhone / Android に追加 | manifest / アイコン / scope、ホーム画面起動、通常 URL はライブ |
+| M11 | 一度表示後のオフライン起動 | 画面を開けても現在値を取得できないことを表示。Cache Storage に API / 外部タイルなし |
+| M12 | 新版公開後の PWA 更新 | 画面が新版に切り替わり、古い shell / API に混在しない |
+| M13 | 匿名 / 実 OAuth の正常取得と 429 | 自分の利用枠 / 間隔、観測 / 取得 / 次回、secret 非露出、再起動でも待機を維持 |
+| M14 | 本番で閲覧者なしの更新 / 停止 | 背景更新と履歴、重複外部取得なし、停止後保存完了、health / DB |
+| M15 | v1 データをバックアップ後 v2 で起動 | 観測 / 機体 / 履歴を保持し、provider_state が作られる |
+| M16 | 停止後バックアップと別環境復元 | DB / WAL / SHM の整合、health / モード / 履歴 / 期限を確認 |
+| M17 | 決めた同時閲覧数 / 長期稼働 | API 応答 / CPU / メモリー / 容量 / 利用枠が決めた条件内。測定値と規模を記録 |
 
-通信障害の再現はまず M06 のローカル API 停止で行えます。外部取得失敗の保存値保持は B07・B08 で決定的に検証します。実データの件数は固定値比較より、`stats.airborne === flights.length`、`withPosition <= airborne`、出典・時刻・状態の対応を確認してください。
+## 6. 今回の実行記録
 
-## 受入対象と未検証の項目
+実行結果は PR の検証記録と合わせて更新する。過去 v0.1.0 の 21 件 / 9 件を今回の件数として転記しない。
 
-以下は[要件定義](02-requirements.md)との対応です。証跡があることは、各 FR のすべての条件を自動テストで網羅している意味ではありません。
-
-| 要件 ID・受入対象 | 実装の根拠 | 証跡 |
+| 確認 | 記録 | 範囲 |
 | --- | --- | --- |
-| FR-01 観測数と統計 | `parseOpenSky()`、`summarize()` | B01～B03、E01・E04、M04 |
-| FR-02 世界地図 | `App` の位置フィルターとマーカー | B01、E02、M09 |
-| FR-03 検索・並び替え・ページ切替 | `App` の検索・並び順・ページ状態 | E02、M03・M11 |
-| FR-04 機体詳細 | `FlightService.detail()`、`DetailCard` | B12、E01～E03、M03 |
-| FR-05 単位と情報の意味 | `parseOpenSky()`、画面の `meters()`・`speed()` | B01・B02、E02、M03 |
-| FR-06 状態と鮮度 | `FlightService.dashboard()`、`useDashboard()` | B07・B08・B10・B11・B16、E04・E06～E09、M05・M06 |
-| FR-07 取得間隔と制限 | `FlightService.dashboard()`、`OpenSkyProvider.fetchObservation()` | B06・B09・B13～B15 |
-| FR-08 明示的なデモ | DB のモード分離と `App` のモード状態 | B04・B08・B12、E01・E04・E05・E09、M02 |
-| FR-09 保存と履歴 | `FlightDatabase.save()`、`read()`、`history()` | B04・B05・B09、M07 |
-| FR-10 API と開発環境 | `createApp()` と npm スクリプト | B12、型チェック・ビルド、M01・M10 |
+| バックエンド | 39 件成功 | Linux / Node.js 24。固定データ / ローカル HTTP、実 OAuth ではない |
+| 型 / build / 予算 | 成功。gzip 初期 JS 80.2 / 総 JS 174.7 / CSS 11.9 KiB | 地図 vendor は初期の静的 import に含まれず、Service Worker 用 13 assets を生成。公開完了ではない |
+| ブラウザー / axe / PWA | 23 件成功（開発 19 / 本番 PWA 4）。最終変更後は関連する開発 5 / PWA 4 件も再確認 | Chromium と fixture。実 iPhone / Android のインストールとは別 |
+| 依存監査 | 検出 0 件（開発依存を含む） | 2026-10-08 日本時間の確認時点。未知の脆弱性の不存在は保証しない |
+| Docker / Compose / Caddy | ビルド・実行・停止 / 再起動、Compose config、Caddy validate 成功 | クラウドの安全な proxy / 管理 CA 設定を使用。実ドメインの TLS は未検証 |
 
-負荷試験、実 OAuth 接続、Windows ネイティブ動作、ブラウザー全種、長期連続稼働、DB バックアップからの復旧は未検証です。地図タイル障害と Windows 受入は上記の手動手順で確認してください。現行自動テストは並び順・ページ切替、地図上限 1,200 機、保存履歴の 24 時間／最大 1,440 点の削除境界、DB の将来スキーマ拒否を網羅していません。
+## 7. 性能・PWA・実データと導入の追加確認
 
-変更後の GitHub の記録には、実行 OS、Node.js バージョン、実行コマンド、結果、未検証項目を残します。スクリーンショットだけで API・DB の検証完了とは判定しません。
+1440 / 390 px の画面例をビルド済みのデモで更新し、320 px の横はみ出しがないこととページの未処理エラー 0 も確認した。画像は合成データで、実測値や実ドメインの公開証跡ではない。
 
-## 導入と画面の追加確認
+10,000 機の fixture で画面がページ 8 件 / 地図 PC 600・モバイル 200 件の API を利用し、航空機の DOM マーカーを作らず Canvas で描画することをブラウザーで確認した。ETag 304、非表示の定期取得抑制、取得中に非表示→表示が続いた場合の再開も回帰検証した。これは UI / 通信契約の検証で、10,000 同時利用者の試験ではない。
 
-Linux / Node.js 24.19.0 で、通常のテストに加えて次を確認しました。
+本番 PWA は 4 ケースでヘッダー / manifest / アイコン、オフラインの新規再読み込みと API 非保存、インストールの案内とブラウザー確認イベント、待機 worker の明示更新 / 再読み込み / このアプリの古い cache だけの削除を確認した。インストールイベントはブラウザーテストで模擬し、実 OS のホーム画面追加とは区別する。
 
-- GitHub から取得した配布ファイルを、スペースを含む既存フォルダーへ配置。既存の `.git`・`.env`・DB 用ファイル・独自メモを保持し、変更前の同名ファイルをバックアップ。
-- `npm run setup` による依存導入・DB 初期化・型検査・ビルドが成功。npm キャッシュ設定の大文字・小文字・未設定の優先順位も確認。
-- ビルド済み画面、health、デモ一覧、機体詳細を本番用サーバーから取得。
-- 幅 1440・900・620・390 px でページの横はみ出しがないことを確認し、画面例を更新。
-- 時計の更新中、変化のない 137 機のマーカーでは位置・選択状態の属性書き換えが 0 件。これは描画抑制の確認であり、大量アクセスの負荷試験ではない。
+2026-10-08 04:48:56（日本時間）の匿名 OpenSky 確認では、観測時刻 04:48:40 の飛行中 10,946 機 / 位置あり 10,695 機を取得した。summary・一覧 8 件・地図 200 件・機体詳細が同じライブ観測に対応することを確認。これは一回の取得時点の結果で、将来の件数や継続的な取得成功の保証ではない。
 
-Windows の `npm.cmd` 手順と PowerShell 補助は未実行です。利用者の端末で上記の手動受入項目を確認します。
+同じ観測で summary の非圧縮 778 bytes、一覧 gzip 666 bytes、地図 gzip 5,698 bytes、旧全件 API gzip 404,112 bytes を記録した。summary は履歴 1 点の時点であり、履歴や検索条件が異なる全ケースの削減率として宣伝しない。
+
+Docker の実行では UID 1000、読み取り専用 root / cap drop、healthy、実行イメージに tsx / tsc / ビルド用 CA がないこと、イメージへ proxy を焼き込まないことを確認した。クラウド側が実行時に注入する proxy 設定とは区別する。デモの summary / 一覧 8 件 / 地図 136 件（上限 200）と同じ観測、PWA の standalone、SIGTERM exit 0、再起動後の SQLite v2 の観測 / 機体 / 履歴保持を確認した。ビルドは必要な proxy と信頼済みの管理 CA を BuildKit secret で使用し、TLS の検証は無効にしていない。Compose config と Caddy validate も成功。実ドメインの証明書取得とは別の確認である。
+
+コンパイル済みの実プロセスで health / demo / 静的ファイル、SIGTERM の正常終了（exit 0）、SQLite v2 の再読込、不正設定の起動時拒否、テスト用の秘密の目印が応答へ含まれないことも確認した。
+
+導入は 82 個のソース / 資料を対象に、既存 .git / .env / data / 独自メモの保持、変更前バックアップ、繰返し実行、シンボリックリンク拒否を Linux で確認した。ファイル配置の検証と Windows ネイティブ実行は区別する。
+
+## 8. 未検証として扱う事項
+
+実 OAuth クライアント、正式公開先の DNS / HTTPS / 証明書更新、iPhone / Android の実インストール、全ブラウザー、Windows ネイティブ、読み上げ実端末、公開規模の負荷、長期連続稼働、公開 DB の復旧受入は別途必要。バンドルの予算通過や自動アクセシビリティ検査だけで完了扱いしない。
+
+[要件定義](02-requirements.md) · [公開前チェック](deployment-checklist.md) · [資料一覧](README.md)
