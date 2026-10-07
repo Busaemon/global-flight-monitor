@@ -66,6 +66,9 @@ export class FlightService {
       if (!Number.isFinite(observedMillis) || this.now() - observedMillis > 120000 || observedMillis - this.now() > 30000) {
         throw new ProviderError('OpenSky の観測時刻が古いか不正です。最新のデータを取得できませんでした。');
       }
+      if (this.liveSnapshot?.observedAt && observedMillis < Date.parse(this.liveSnapshot.observedAt)) {
+        throw new ProviderError('OpenSky の観測データが保存済みデータより古いため、前回の観測データを保持します。');
+      }
       const snapshot: StoredSnapshot = { ...observation, mode: 'live', source: LIVE_SOURCE, coverageNote: LIVE_COVERAGE, fetchedAt };
       this.database.save(snapshot);
       this.liveSnapshot = snapshot;

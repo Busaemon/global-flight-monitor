@@ -25,7 +25,8 @@ try {
 // The working directory is an option, so paths with spaces need no shell interpolation.
 const environment = {
   ...process.env,
-  npm_config_cache: process.env.NPM_CONFIG_CACHE || join(tmpdir(), 'global-flight-monitor-npm-cache'),
+  npm_config_cache: process.env.NPM_CONFIG_CACHE || process.env.npm_config_cache
+    || join(tmpdir(), 'global-flight-monitor-npm-cache'),
 };
 const steps = [
   { label: '依存関係をインストール', args: ['ci', '--no-audit', '--no-fund'] },

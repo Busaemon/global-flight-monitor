@@ -1,59 +1,66 @@
-# ソースと資料をまとめて GitHub に追加する
+# ソースと資料の変更を GitHub に送信する
 
-対象リポジトリは `Busaemon/global-flight-monitor` です。`docs/` の Markdown は GitHub 上でそのまま読み、リンクから企画・要件・設計・テスト・運用の資料へ移動できます。図は Mermaid、画面例は `docs/images/` にまとめています。
+対象リポジトリは `Busaemon/global-flight-monitor` です。アプリと11種類の資料はすでに `main` にあります。このガイドは、お使いの PC で今後の変更を作り、作業ブランチから Pull Request を送信する手順です。
 
-このガイドはお使いの PC から送信する手順です。配布 ZIP に Git 履歴や認証情報は入れていません。
+アプリを既存フォルダーへ配置して起動する手順は [Windows 導入ガイド](09-windows-setup.md) にあります。配置スクリプトと ZIP のコピーはファイルを追加するだけで、ローカルの Git 履歴を GitHub と同期しません。既存の `.git` があることだけでは、GitHub の `main` と同じ履歴であるとは限りません。
 
-完成版を GitHub から取得する場合は [Windows 導入ガイド](09-windows-setup.md) を使います。既存フォルダーへの配置スクリプトはローカルの Git 履歴を変更しません。GitHub 側にすでに `main` の履歴があるため、独立した初期コミットを作って同じ `main` に送信すると衝突します。今後の変更を送信する際は、GitHub の履歴から作業ブランチを作るか、既存履歴との関係を確認してから取り込んでください。下記の「GitHub 側が空」の手順は、空のリポジトリへ初めて配置する場合に限ります。
+## 1. GitHub の履歴に基づく作業フォルダーを用意する
 
-## 1. まずフォルダーを確認する
-
-VS Code で既存の `global-flight-monitor` を開き、PowerShell ターミナルで確認します。
+既存フォルダーが GitHub から clone したものではない場合は、そのフォルダーと独自ファイルを残したまま、別の作業フォルダーを作ります。PowerShell で作業フォルダーを置きたい親フォルダーへ移動し、次を実行します。`global-flight-monitor-git` は未使用のフォルダー名を指定してください。
 
 ```powershell
-Test-Path .\package.json
-Test-Path .\docs\README.md
-Test-Path .\.gitignore
+git clone --branch main https://github.com/Busaemon/global-flight-monitor.git global-flight-monitor-git
+if ($LASTEXITCODE -ne 0) { throw "GitHub からの取得に失敗しました。" }
+Set-Location .\global-flight-monitor-git
+git switch -c work/flight-monitor-update
+if ($LASTEXITCODE -ne 0) { throw "作業ブランチの作成に失敗しました。" }
 ```
 
-3つとも `True` になれば、アプリ本体・資料・除外設定が同じフォルダーにあります。
+この作業フォルダーを VS Code で開いて変更します。元の既存フォルダーですでに修正したファイルがある場合は、必要な変更だけ作業フォルダーへ反映し、差分を確認してください。元の `.git`、`.env`、DB、`node_modules`、`dist` はコピーせず、そのまま保持します。
 
-## 2. Git の状態を確認する
-
-`.git` がある場合は既存の設定を使います。
+すでにこのリポジトリを clone した作業フォルダーがある場合は、それを使えます。`git status` と `git remote -v` で変更内容と接続先を確認し、未コミットの変更がない状態で、最新の `main` から新しいブランチを作ります。
 
 ```powershell
-if (-not (Test-Path .git)) {
-    git init -b main
-}
+git fetch origin
+if ($LASTEXITCODE -ne 0) { throw "GitHub の履歴取得に失敗しました。" }
+git switch -c work/flight-monitor-update origin/main
+if ($LASTEXITCODE -ne 0) { throw "作業ブランチの作成に失敗しました。" }
+```
+
+ブランチ名は変更の内容に合わせて変え、すでに使っている名前は避けます。未コミットの変更がある場合は、その変更を現在のブランチで保存してから切り替えてください。既存フォルダーの履歴が別系統の場合も、この新しい clone へ必要な変更を反映する方法を使えます。
+
+Git が認証の画面を出した場合は通常の GitHub サインインを使います。送信にはリポジトリへの書き込み権限が必要です。認証情報をコードやコマンド例に保存する必要はありません。
+
+## 2. 変更と検証結果を確認する
+
+アプリ・資料の関連する変更を同じブランチで管理します。まず差分を確認します。
+
+```powershell
 git status
-git branch --show-current
-git remote -v
+git diff
 ```
 
-まだコミットが一度もない初期リポジトリで、ブランチ名が `main` でない場合だけ、次で初期ブランチ名を `main` にします。既存の履歴があるブランチはそのまま使います。
+アプリのコードを変更した場合は、依存関係を導入済みの作業フォルダーで、変更に応じたテストとビルドを実行します。
 
 ```powershell
-git branch -M main
+npm.cmd test
+npm.cmd run build
+# 画面を変更した場合は、Chromium を導入済みの環境で実行
+npm.cmd run test:e2e
 ```
 
-`origin` が登録されていない場合に限り、次を実行します。すでにある場合は追加し直さず、接続先が目的のリポジトリか確認します。
+初回の依存導入は [Windows 導入ガイド](09-windows-setup.md)、テストの範囲とブラウザーの導入は [テスト仕様](07-test-specification.md) を参照します。
 
-```powershell
-git remote add origin https://github.com/Busaemon/global-flight-monitor.git
-```
-
-VS Code のソース管理機能から GitHub にサインインすることもできます。Git が認証の画面を出した場合は通常の GitHub 認証を使用します。トークンの値を README やコマンド例へ保存する必要はありません。
-
-## 3. 送信する内容を確認して、まとめてコミットする
+## 3. ソースと資料をまとめてコミットする
 
 ```powershell
 git add .
 git diff --cached --stat
 git diff --cached --name-only
+git diff --cached
 ```
 
-追加対象には、次が含まれます。
+追加対象には、変更した次のファイルが含まれます。
 
 | 対象 | 内容 |
 | --- | --- |
@@ -62,16 +69,16 @@ git diff --cached --name-only
 | `scripts/`、`.vscode/` | セットアップと VS Code のタスク |
 | `tests/`、`playwright.config.ts` | 自動テスト |
 | `.github/` | バグ報告・機能提案・PR のテンプレート |
-| `package.json`、`package-lock.json`、各設定 | 再現するための依存関係・設定 |
+| `package.json`、`package-lock.json`、各設定 | 依存関係・設定 |
 | `README.md`、`START-HERE.md` | リポジトリの入口と初回導入 |
 | `.gitignore`、`.gitattributes`、`.env.example`、`.nvmrc` | Git の除外・改行・任意設定見本・Node バージョン |
 
-`.env`、`node_modules/`、`data/`、`dist/`、テスト生成物は `.gitignore` により追加されません。DB やビルド済みファイルは各 PC で作成します。もし以前から追跡されている `.env` や DB がある場合は、除外設定だけでは追跡が解除されないため、その履歴を確認してから送信します。
+`.env`、`node_modules/`、`data/`、`dist/`、テスト生成物は `.gitignore` により追加されません。DB やビルド済みファイルは各 PC で作成します。すでに追跡されているファイルは `.gitignore` だけでは除外されないため、コミットする差分にも秘密の値や DB がないことを確認します。
 
-内容を確認後、1つのコミットにまとめられます。
+確認できたら、変更内容が伝わるメッセージでコミットします。
 
 ```powershell
-git commit -m "Add flight monitor app and project documentation"
+git commit -m "Update flight monitor app and documentation"
 ```
 
 Git に名前・メールが未設定というエラーが出たときだけ、自分の情報をリポジトリ単位で設定し、コミットを再実行します。GitHub の非公開メール設定を利用することもできます。
@@ -81,35 +88,24 @@ git config user.name "自分の Git 表示名"
 git config user.email "自分が使用する Git メールアドレス"
 ```
 
-## 4. GitHub に送信する
-
-GitHub 側が空で、現在のブランチが `main` の初回追加は次を実行します。
-
-```powershell
-git push -u origin main
-```
-
-既存の別ブランチで作業している場合は、そのブランチを送信します。
+## 4. 作業ブランチを送信し、Pull Request を作る
 
 ```powershell
 git push -u origin HEAD
 ```
 
-GitHub で Pull Request を作成し、実装と資料を確認して `main` へ取り込めます。直接 `main` に送れない設定の場合も、この方法を使います。
+[GitHub のリポジトリ](https://github.com/Busaemon/global-flight-monitor)で「Compare & pull request」を選び、取り込み先を `main`、変更元を作業ブランチにします。変更内容、対応する要件、更新した資料、実行したテストの結果を PR テンプレートに記入します。
 
-`non-fast-forward` など既存履歴との衝突が出た場合は、強制 push せず、`git fetch origin` と `git log --oneline --all --max-count=15` でローカル／リモートの履歴を確認します。既存の変更を保持した上で取り込み方法を決めます。送信先に予想しないコードがあれば、その変更を先に確認してください。
+`non-fast-forward` など履歴の衝突が出た場合は、`git fetch origin` と `git log --oneline --all --max-count=15` で履歴を確認します。既存の変更を保存したうえで取り込み方法を決め、履歴の上書きで解決しないでください。
 
 ## 5. GitHub 上で確認する
 
-- トップページに README が表示される。
-- `docs/README.md` から各資料が開く。
-- 図と画面例が表示される。
-- `src`・`server`・`shared`・`tests` がある。
+- PR の「Files changed」が今回の変更に対応している。
+- `docs/README.md` から関連する資料が開く。
+- 変更した図と画面例が表示される。
 - `.env`・実 DB・`node_modules` が含まれていない。
 
-## GitHub のブラウザー画面から追加する場合
-
-「Add file」→「Upload files」からソースと資料を追加する方法もあります。GitHub は ZIP をソースに展開しないので、ZIP 自体ではなく展開後のファイルを選びます。`node_modules`、`data`、`dist`、`.env` は選択しないでください。Web アップロードは `.gitignore` による選別を行わないため、上の Git コマンドの方法を推奨します。
+PR を確認して `main` へ取り込むと、ソースと関連資料が同じ履歴に記録されます。以後の変更も、最新の `origin/main` から別の作業ブランチを作って進めます。
 
 ## 今後の資料更新
 
