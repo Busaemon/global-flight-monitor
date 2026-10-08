@@ -89,7 +89,7 @@ npm.cmd run test:e2e
 | ポート使用中 | このアプリの前の起動を停止。PC の他の Node プロセスを一括終了しない |
 | `.env` の PORT だけ変更した | 開発の Vite プロキシは 3001 固定。設定の整合を確認 |
 | 実データが不明 / 古い | 回線、観測時刻、OpenSky 状態、匿名 15 分の間隔、429 の待機を確認 |
-| 地図タイルが出ない | CARTO の通信を確認。簡易陸地と観測 API の状態を別に調べる |
+| 地図タイルが出ない / API KEY REQUIRED が出る | 最新版へ更新。背景はキー不要の OpenStreetMap に変更済み。`tile.openstreetmap.org` への通信と CSP を確認し、簡易陸地と観測 API の状態を別に調べる |
 | `npm start` がファイルを見つけない | `npm.cmd run build` が成功したか確認 |
 | 設定変更後に 403 / 制限がある | PUBLIC_ORIGIN と実 URL、信頼するプロキシ数を確認。安全性の設定を無条件に解除しない |
 | PWA を追加できない | HTTPS の正式 URL、対応ブラウザー、manifest / Service Worker の配信を確認 |

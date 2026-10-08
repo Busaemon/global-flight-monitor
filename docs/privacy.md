@@ -18,17 +18,19 @@ PWA はビルドされた HTML / アイコン / JavaScript / CSS など同一オ
 | --- | --- |
 | ブラウザー → このアプリ | API と画面。検索条件、選択 ICAO24、地図範囲がサーバーへ送られる |
 | サーバー → OpenSky | 状態ベクトル。サーバーの IP / 任意の OAuth 情報。利用者の個別検索は外部 API に転送しない |
-| ブラウザー → CARTO | 地図タイル。接続 IP と要求したタイルの情報が外部サービスへ届く |
+| ブラウザー → OpenStreetMap | 地図タイル。接続 IP、要求したタイル、ブラウザーの User-Agent、アプリのオリジン（URL の検索条件を除く）が外部サービスへ届く |
 | サーバー → 証明書発行サービス | Caddy の HTTPS 証明書発行 / 更新。設定したドメインと ACME の連絡先 |
 | 開発 / CI → npm / GitHub / Playwright | 依存とツールの導入 / 検証。利用者の観測表示とは別 |
 
 詳細タイルが利用できない場合は同梱の簡易陸地を表示する。地図への帰属表示は削除しない。通信先の条件とプライバシーは提供元の情報も確認する。
 
+OpenStreetMap の [タイル利用ポリシー](https://operations.osmfoundation.org/policies/tiles/) に従い、画面に表示する範囲だけを取得し、通常の HTTP キャッシュを使用する。Service Worker によるタイル保存、地域一括ダウンロード、オフライン地図の事前取得は実装しない。地図画像には `strict-origin-when-cross-origin` を指定し、必要な Referer はオリジンだけを送る。他の外部通信には全体の `no-referrer` を適用する。標準タイルは利用枠や可用性を保証するサービスではなく、公開規模が大きい場合は利用条件に適合する契約サービスなどを選ぶ。
+
 ## データと利用条件
 
 OpenSky は観測可能な機体の情報を提供する。受信範囲、欠損、遅延、利用枠があり、世界の全機体の正確な総数ではない。商用利用、再配布、取得枠の利用は [OpenSky の公式情報](https://opensky-network.org/) と [API 仕様](https://openskynetwork.github.io/opensky-api/rest.html) で確認し、承認済みと仮定しない。
 
-地図は OpenStreetMap / CARTO の帰属を保持する。簡易陸地は [Natural Earth のパブリックドメイン](https://www.naturalearthdata.com/about/terms-of-use/) のデータ。アプリのソースの公開と、外部データ / 地図 / 依存コードの利用条件は別である。
+地図は [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) の帰属を保持する。簡易陸地は [Natural Earth のパブリックドメイン](https://www.naturalearthdata.com/about/terms-of-use/) のデータ。アプリのソースの公開と、外部データ / 地図 / 依存コードの利用条件は別である。
 
 ## 運営者と連絡先
 

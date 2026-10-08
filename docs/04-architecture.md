@@ -11,7 +11,7 @@ flowchart LR
     A --> D[(SQLite 永続領域)]
     A -->|利用枠内の取得| O[OpenSky API]
     A -->|任意の OAuth| T[OpenSky Token API]
-    U -->|外部タイル| M[CARTO / OpenStreetMap]
+    U -->|外部タイル| M[OpenStreetMap]
     U --- S[Service Worker: 画面ファイルだけ]
 ```
 

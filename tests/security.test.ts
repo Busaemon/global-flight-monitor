@@ -73,7 +73,7 @@ test('security headers restrict scripts, frames, browser permissions and referre
     assert.match(csp, /manifest-src 'self'/);
     assert.match(csp, /object-src 'none'/);
     assert.match(csp, /frame-ancestors 'none'/);
-    assert.match(csp, /img-src 'self' data: blob: https:\/\/basemaps\.cartocdn\.com/);
+    assert.match(csp, /img-src 'self' data: blob: https:\/\/tile\.openstreetmap\.org/);
     assert.match(csp, /style-src 'self' 'unsafe-inline'/);
     assert.doesNotMatch(csp, /unsafe-eval|upgrade-insecure-requests/);
     assert.equal(response.headers.get('strict-transport-security'), null);

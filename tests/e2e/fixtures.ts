@@ -107,8 +107,11 @@ export async function mockFlightApi(page: Page, options: MockOptions = {}) {
 }
 
 export async function localMapTiles(page: Page) {
-  // Tile fixtures avoid external services and provider credits.
-  await page.route('https://basemaps.cartocdn.com/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=', 'base64') }));
+  // Transparent tiles keep the bundled land visible without contacting external services.
+  await page.route('https://tile.openstreetmap.org/**', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>',
+  }));
 }
 
 export async function assertNoHorizontalOverflow(page: Page) {

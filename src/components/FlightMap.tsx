@@ -68,8 +68,8 @@ const Aircraft = memo(function Aircraft({ flights, selectedId, onSelect }: {
   return <>{flights.map(flight => <CircleMarker key={flight.icao24}
     center={[flight.latitude, flight.longitude + 360 * Math.round((centerLongitude - flight.longitude) / 360)]} renderer={renderer}
     radius={flight.icao24 === selectedId ? 8 : 4}
-    pathOptions={{ color: flight.icao24 === selectedId ? '#e5fcff' : '#74ddeb',
-      fillColor: flight.icao24 === selectedId ? '#f4c87e' : '#74ddeb', fillOpacity: .9, weight: 1.5 }}
+    pathOptions={{ color: '#102a43',
+      fillColor: flight.icao24 === selectedId ? '#f4c87e' : '#74ddeb', fillOpacity: .95, weight: 1.5 }}
     eventHandlers={{ click: () => onSelect(flight.icao24) }}>
     <Tooltip direction="top">{flight.callsign || flight.icao24.toUpperCase()} · {flight.originCountry}</Tooltip>
   </CircleMarker>)}</>;
@@ -89,29 +89,34 @@ export default memo(function FlightMap({ mode, query, revision, selectedId, sele
   if (selectedId) params.set('selected', selectedId);
   const { data, loading, error } = useApiResource<FlightMapResponse>(`/api/map?${params}`, mode, `${revision}:${retry}`);
   const flights = data?.flights ?? [];
+  const hasObservation = data?.observedAt !== null && data?.observedAt !== undefined;
   return <div className="map-frame" role="region" aria-label="航空機の位置を表示する地図" aria-describedby="map-description">
     <p id="map-description" className="sr-only">地図はドラッグまたは矢印キーで移動し、拡大縮小ボタンで操作できます。表示範囲内の機体を最大{limit}機表示します。フライト一覧のボタンでも機体を選択できます。</p>
     <MapContainer center={[28, 10]} zoom={2} minZoom={0} maxZoom={12} zoomSnap={.5} zoomControl={false}
       scrollWheelZoom={false} worldCopyJump className="flight-map" aria-label="世界地図">
       <Pane name="offline-land" style={{ zIndex: 190 }}><GeoJSON data={worldLand} pane="offline-land" interactive={false}
         style={LAND_STYLE} attribution='<a href="https://www.naturalearthdata.com/">Natural Earth</a>' /></Pane>
-      <TileLayer url="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+      <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        referrerPolicy="strict-origin-when-cross-origin"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         eventHandlers={{ tileerror: () => setTileError(true) }} />
       <ZoomControl position="bottomleft" /><MapView onBounds={setBounds} onLimit={setLimit} flight={selected} token={focusToken} />
       <Aircraft flights={flights} selectedId={selectedId} onSelect={onSelect} />
     </MapContainer>
     <div className="map-label"><span className="status-dot" /><span>{mode === 'demo' ? 'DEMO AIRSPACE' : 'OBSERVED AIRSPACE'}</span>
-      <strong>{number.format(flights.length)} <small>機を表示</small></strong></div>
-    {!data && <div className="map-message"><div className="radar-loader"><Radio size={27} /></div>
-      <strong>{loading ? '空の状況を取得しています' : '地図データを取得できません'}</strong>
-      <span>{error || 'フライト一覧からも機体を選択できます。'}</span>
-      {!loading && <button className="secondary-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={16} /> 地図を再取得</button>}
+      <strong>{hasObservation ? number.format(flights.length) : '—'} <small>{hasObservation ? '機を表示' : '位置未受信'}</small></strong></div>
+    {(!data || !hasObservation && error) && <div className="map-message" role="status" aria-label="航空機の位置の取得状態">
+      <strong><Radio size={18} />{loading ? '航空機の位置を取得しています' : '航空機の位置を取得できません'}</strong>
+      <span>{error || '地図はこのまま操作できます。'}</span>
+      {!loading && <button className="secondary-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={16} /> 航空機の位置を再取得</button>}
     </div>}
-    {data && flights.length === 0 && !loading && !error && <div className="map-message compact"><Globe2 size={24} />
-      <strong>表示範囲に一致する機体がありません</strong><span>地図を移動するか、検索条件を変更してください。</span></div>}
-    {data && error && <div className="map-error" role="status">最後に取得した位置を表示しています。<button onClick={() => setRetry(value => value + 1)}>再取得</button></div>}
-    {tileError && <div className="tile-error"><MapPin size={14} />詳細な地図を取得できないため、簡易地図を表示しています。</div>}
+    {data && !hasObservation && !loading && !error && <div className="map-message compact" role="status" aria-label="航空機の位置の取得状態">
+      <strong><Radio size={18} />航空機の位置は未受信です</strong><span>ライブデータの受信を待っています。地図は操作できます。</span></div>}
+    {data && hasObservation && flights.length === 0 && !loading && !error && <div className="map-message compact" role="status" aria-label="航空機の位置の取得状態">
+      <strong><Globe2 size={18} />表示範囲に一致する機体がありません</strong><span>地図を移動するか、検索条件を変更してください。</span></div>}
+    {data && hasObservation && error && <div className="map-message map-error" role="status" aria-label="航空機の位置の取得状態"><strong>最後に取得した位置を表示しています。</strong>
+      <button className="secondary-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={16} /> 航空機の位置を再取得</button></div>}
+    {tileError && <div className="tile-error"><MapPin size={14} />背景地図を取得できないため、簡易地図を表示しています。</div>}
     <div className="map-legend"><span className="legend-dot" />航空機<span className="legend-dot selected" />選択中
       <span>{data?.sampled ? `範囲内${number.format(data.total)}機から間引き表示` : '一覧でも選択できます'}</span></div>
   </div>;

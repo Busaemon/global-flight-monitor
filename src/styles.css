@@ -99,13 +99,14 @@ h1 { font-size: clamp(28px, 3vw, 36px); letter-spacing: 1px; font-weight: 550; l
 .map-legend > span:last-child { width: 100%; color: #bdd5e4; }
 .legend-dot { width: 7px; height: 7px; border-radius: 50%; background: #74ddeb; flex-shrink: 0; }
 .legend-dot.selected { margin-left: 8px; background: #f4c87e; border: 1px solid #e5fcff; }
-.map-message { position: absolute; inset: 0; z-index: 500; background: #0c1925ee; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 28px; text-align: center; }
-.map-message > span { max-width: 360px; color: #c2d5e4; }
-.map-message.compact { background: #0c1925ba; pointer-events: none; }
-.radar-loader { width: 68px; height: 68px; display: grid; place-items: center; border: 1px solid #53798d; border-radius: 50%; color: #afdfea; margin-bottom: 5px; }
-.tile-error, .map-error { position: absolute; z-index: 460; bottom: 123px; left: 14px; max-width: calc(100% - 28px); border-radius: 5px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; font-size: 12px; background: #1b2f41ed; color: #dbebf5; }
-.map-error { top: 72px; bottom: auto; background: #2e291ded; color: #f1ddba; }
-.map-error button, .detail-error button { background: none; border: 0; color: inherit; text-decoration: underline; padding: 0 6px; }
+.map-message { position: absolute; top: 72px; right: 14px; width: 320px; max-width: calc(100% - 28px); z-index: 460; background: #102538; border: 1px solid #6b8ca4; border-radius: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; text-align: left; pointer-events: none; }
+.map-message > strong { display: flex; align-items: flex-start; gap: 7px; font-size: 14px; line-height: 1.5; }
+.map-message > strong svg { flex-shrink: 0; margin-top: 2px; }
+.map-message > span { color: #d2e4f2; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.map-message button { pointer-events: auto; min-height: 44px; max-width: 100%; padding: 8px 12px; }
+.tile-error { position: absolute; z-index: 460; bottom: 123px; left: 14px; max-width: calc(100% - 28px); border-radius: 5px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; font-size: 12px; background: #1b2f41ed; color: #dbebf5; }
+.map-error { background: #2e291d; border-color: #a98b60; color: #f1ddba; }
+.detail-error button { background: none; border: 0; color: inherit; text-decoration: underline; padding: 0 6px; }
 .leaflet-control-zoom { border: 1px solid #6b8ca4 !important; border-radius: 6px !important; margin: 0 0 42px 15px !important; }
 .leaflet-control-zoom a { background: #172b3d !important; color: #e0eff9 !important; width: 44px !important; height: 44px !important; line-height: 44px !important; }
 .leaflet-control-zoom a:hover { background: #2b4d65 !important; }
@@ -278,6 +279,7 @@ footer a { min-height: 44px; }
   .refresh-button { padding: 8px 4px; font-size: 12px; gap: 5px; flex-shrink: 0; }
   .refresh-button span { max-width: 60px; }
   .map-frame { min-height: 370px; }
+  .map-frame:has(.map-message):has(.tile-error) { min-height: 430px; }
   .map-label { top: 12px; left: 12px; padding: 8px 9px; gap: 6px; max-width: calc(100% - 24px); }
   .map-label > span:nth-child(2) { font-size: 12px; }
   .map-label strong { font-size: 15px; margin-left: 0; }

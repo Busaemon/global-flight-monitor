@@ -69,7 +69,7 @@ Invoke-RestMethod https://flights.example.com/api/health
 | registry.npmjs.org | 依存導入 / 更新 |
 | opensky-network.org | 状態ベクトル |
 | auth.opensky-network.org | OAuth 設定時のトークン |
-| basemaps.cartocdn.com | ブラウザーの詳細タイル |
+| tile.openstreetmap.org | ブラウザーの詳細タイル（地図画像だけオリジンの Referer を送信） |
 | 公開先の ACME / DNS | Caddy の証明書発行 / 更新 |
 | Playwright のブラウザー配布先 | テスト初回の Chromium 導入 |
 
@@ -143,7 +143,7 @@ v1 は起動時に v2 に移行する。v2 を旧 v1 アプリへ直接戻さな
 | OAuth 401 / 不完全 | 両変数、正式クライアント、期限。秘密をログ / チャットへ貼らない |
 | API 403 | PUBLIC_ORIGIN と Origin。公開 URL と末尾 slash を確認 |
 | 証明書発行失敗 | DOMAIN / DNS / AAAA / 80 / 443 / ACME_EMAIL、Caddy のエラー |
-| 地図だけ失敗 | CARTO 通信と CSP、簡易陸地。観測 API と別に確認 |
+| 地図だけ失敗 | OpenStreetMap 通信 / 地図画像の Referer / CSP、簡易陸地。HTTP 200 でもエラー画像の可能性があるため、画像の内容も確認。観測 API と別に調べる |
 | オフライン | 画面だけ使える。現在の観測の取得ができない状態を確認 |
 | TLS / proxy | 正式な CA 設定と環境プロキシを確認。検証を無効にしない |
 

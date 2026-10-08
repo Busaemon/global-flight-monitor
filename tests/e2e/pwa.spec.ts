@@ -88,7 +88,7 @@ test('offline reload opens the shell with unknown observations and never cached 
     expect(url.search).toBe('');
     expect(url.pathname).toMatch(/^\/(?:index\.html|assets\/.+-[A-Za-z0-9_-]{8,}\.(?:js|css)|icons\/[A-Za-z0-9_-]+\.(?:png|svg))$/);
   }
-  expect(cached.urls.some((url) => url.includes('/api/') || url.includes('cartocdn'))).toBe(false);
+  expect(cached.urls.some((url) => url.includes('/api/') || url.includes('tile.openstreetmap.org'))).toBe(false);
   expect(initialConsoleErrors).toEqual([]);
 
   offline = true;

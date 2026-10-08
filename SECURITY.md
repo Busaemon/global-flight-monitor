@@ -24,6 +24,8 @@
 
 Leaflet の動的な配置のため、CSP の `style-src` は `unsafe-inline` を許可します。`script-src` は同一オリジンのみです。CSP とレート制限は、侵害が起きないことや大規模な DDoS への耐性を保証しません。必要な公開規模に応じてホスト側の制限と監視を追加してください。
 
+外部地図画像は CSP で `https://tile.openstreetmap.org` を許可します。全体の Referrer-Policy は `no-referrer`、地図画像だけは提供元の利用条件に従って `strict-origin-when-cross-origin` を指定します。外部へ送る Referer に検索条件や選択機体の URL は含めません。
+
 ## 運用者の確認事項
 
 公開は HTTPS を使い、`PUBLIC_ORIGIN` と信頼するプロキシ数を実際の構成に合わせます。OAuth 設定はホストの秘密管理または権限を制限した `.env` に置きます。ブラウザー向けの `VITE_*` 変数に秘密を入れないでください。

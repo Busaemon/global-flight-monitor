@@ -50,7 +50,7 @@ export function configureHttp(app: Express): void {
         scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"], // Leaflet positions tiles and markers using inline styles.
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://basemaps.cartocdn.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org'],
         fontSrc: ["'self'"],
         connectSrc: ["'self'"],
         workerSrc: ["'self'"],

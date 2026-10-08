@@ -89,4 +89,4 @@ GitHub Actions は lockfile で依存を導入し、テスト・型検査 / ビ�
 | `docs/` | 11 種の企画 / 設計資料、公開前チェック、プライバシー説明 |
 | `.github/` | CI・依存更新・Issue / PR テンプレート |
 
-OpenStreetMap / CARTO の地図帰属表示を保持しています。詳細タイルを取得できない場合は同梱の [Natural Earth のパブリックドメイン陸地データ](https://www.naturalearthdata.com/about/terms-of-use/) を表示します。外部タイルへの通信とデータ利用条件は [プライバシーと外部サービス](docs/privacy.md) を参照してください。
+背景地図は認証キー不要の OpenStreetMap 標準タイルで、帰属表示を保持しています。詳細タイルを取得できない場合は同梱の [Natural Earth のパブリックドメイン陸地データ](https://www.naturalearthdata.com/about/terms-of-use/) を表示します。外部タイルへの通信とデータ利用条件は [プライバシーと外部サービス](docs/privacy.md) を参照してください。
