@@ -11,15 +11,21 @@ const destination = realpathSync(resolve(process.argv[2] ?? process.cwd()));
 const files = [
   '.env.example', '.gitattributes', '.gitignore', '.nvmrc', 'README.md',
   'START-HERE.md', 'index.html', 'package.json', 'package-lock.json',
-  'playwright.config.ts', 'tsconfig.json', 'tsconfig.server.json', 'vite.config.ts',
+  'playwright.config.ts', 'tsconfig.json', 'tsconfig.server.json', 'tsconfig.server.build.json', 'vite.config.ts',
+  '.dockerignore', '.env.production.example', 'Dockerfile', 'compose.yml', 'Caddyfile',
+  'SECURITY.md', 'CONTRIBUTING.md',
 ];
-const folders = ['.github', '.vscode', 'docs', 'scripts', 'server', 'shared', 'src', 'tests'];
+const folders = ['.github', '.vscode', 'docs', 'public', 'scripts', 'server', 'shared', 'src', 'tests'];
 
 if (!lstatSync(destination).isDirectory()) throw new Error('Destination must be an existing folder.');
 if (source === destination) throw new Error('Run this installer from a separate downloaded copy.');
 
 function collect(folder) {
-  for (const entry of readdirSync(join(source, folder), { withFileTypes: true })) {
+  const location = join(source, folder);
+  const stat = lstatSync(location);
+  if (stat.isSymbolicLink()) throw new Error(`Source contains a symbolic link: ${folder}`);
+  if (!stat.isDirectory()) throw new Error(`A source folder is needed: ${folder}`);
+  for (const entry of readdirSync(location, { withFileTypes: true })) {
     const path = join(folder, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`Source contains a symbolic link: ${path}`);
     if (entry.isDirectory()) collect(path);

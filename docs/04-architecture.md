@@ -1,197 +1,100 @@
-# 基本設計・システム構成
+# システム設計書
 
-この文書は、同梱されている実装の構成と動作を説明します。機能の目的・要件は [企画書](01-project-proposal.md) と [要件定義書](02-requirements.md)、保存形式は [データベース設計書](05-database-design.md)、HTTP の契約は [API 仕様書](06-api-specification.md) を参照してください。
+## 1. 構成
 
-## 1. システムの目的と取得範囲
-
-SKYTRACE は、OpenSky Network が観測した航空機のうち、最近通信があった飛行中の機体を集計し、地図・一覧・詳細・機数の履歴として表示します。OpenSky の受信範囲、機体からの送信、API の利用枠に依存するため、世界中の全航空機を網羅する正確な総数ではありません。
-
-出発・到着空港、機種、機体登録記号、旅客数、運航会社の確定情報は現在のデータモデルにありません。`callsign` はコールサイン、`originCountry` は登録国です。登録国を、機体が現在飛んでいる国として解釈しません。
-
-## 2. 採用技術
-
-| 層 | 技術 | 役割 |
-| --- | --- | --- |
-| 実行環境 | Node.js 24.5.0 以上 / npm | API の実行、パッケージ管理、標準 SQLite と環境プロキシ対応 |
-| フロントエンド | React 19 / TypeScript | 日本語のダッシュボード、状態管理、型の共有 |
-| 開発・ビルド | Vite 7 / `tsx` | 開発サーバー、画面のビルド、サーバー側 TypeScript の実行 |
-| HTTP API | Express 5 | API のルーティング、本番ビルドの静的配信 |
-| 地図 | Leaflet 1.9 / React Leaflet 5 | 地図操作、機体マーカー、位置への移動 |
-| 地図背景 | CARTO / OpenStreetMap | ブラウザーから地図タイルを取得 |
-| 背景の代替 | 同梱の Natural Earth 陸地データ | タイル障害時にも簡易背景を表示 |
-| データベース | Node.js 標準 `node:sqlite` / SQLite | 最新観測と機数履歴をローカルファイルに保存 |
-| 検証 | Node.js テストランナー / Playwright | バックエンドの検証とブラウザー操作の検証 |
-
-実際にインストールするバージョンは `package-lock.json` で固定します。SQLite 用の外部 DB サーバーやネイティブ npm ドライバーの導入は不要です。
-
-## 3. 開発時の構成
-
-`npm run dev` は API と Vite を同時に起動します。ブラウザーは Vite のポート 5173 に接続し、`/api` のリクエストを Vite が API のポート 3001 に転送します。
+単一サーバーでビルド済み画面と API を同一オリジンから配信する。SQLite の永続領域を使い、公開時は Caddy を HTTPS リバースプロキシとする。開発時だけ Vite が API 3001 に転送する。直接起動の標準 HOST は 127.0.0.1、Docker は内部ネットワーク用の 0.0.0.0 を明示する。
 
 ```mermaid
 flowchart LR
-    Browser[ブラウザー] -->|画面・開発更新 :5173| Vite[Vite 開発サーバー]
-    Vite -->|/api を :3001 へ転送| API[Express API]
-    API --> Service[FlightService]
-    Service -->|取得期限に達した要求時| Provider[OpenSkyProvider]
-    Provider -->|HTTPS| OpenSky[OpenSky Network]
-    Provider -->|OAuth 設定時のみ HTTPS| OAuth[OpenSky 認証サーバー]
-    Service --> DB[(SQLite)]
-    Browser -->|HTTPS 地図タイル| Carto[CARTO / OpenStreetMap]
+    U[PC / スマートフォン Web・PWA] -->|HTTPS 同一オリジン| C[Caddy]
+    C -->|内部ネットワーク| A[Node.js / Express]
+    A --> D[(SQLite 永続領域)]
+    A -->|利用枠内の取得| O[OpenSky API]
+    A -->|任意の OAuth| T[OpenSky Token API]
+    U -->|外部タイル| M[OpenStreetMap]
+    U --- S[Service Worker: 画面ファイルだけ]
 ```
 
-Vite のポートは `strictPort: true` のため、5173 が使用中なら別ポートへ自動移動せず起動に失敗します。Vite の API 転送先は現在 `127.0.0.1:3001` に固定されているため、通常の開発では API の `PORT` を 3001 にします。
+この図の構成は設定例であり、実ドメインへ公開済みという意味ではない。公開先、OAuth クライアント、運用規模は未確定。
 
-## 4. 本番ビルドを使う構成
+## 2. 責務
 
-`npm run build` は型チェック後に画面を `dist/` へ出力します。続いて `npm start` を実行すると、Express が画面と API の両方を標準ポート 3001 で配信します。
-
-```mermaid
-flowchart LR
-    Browser[ブラウザー] -->|画面と /api :3001| Express[Express]
-    Express --> Static[dist の静的ファイル]
-    Express --> Service[FlightService]
-    Service --> Provider[OpenSkyProvider]
-    Provider -->|HTTPS| OpenSky[OpenSky Network / OAuth]
-    Service --> DB[(data/flights.sqlite)]
-    Browser -->|HTTPS| Tiles[CARTO 地図タイル]
-```
-
-サーバーの TypeScript は本番起動時も `tsx` で実行します。現在 `tsx` は `devDependencies` に含まれているため、この構成をそのまま動かす際は `npm ci --omit=dev` で省略せず、`npm ci` で導入します。`dist/index.html` がなければ API は動きますが画面の静的配信は有効になりません。
-
-公開用 HTTPS の終端、ドメイン、外部への公開設定、プロセス監視はこのアプリの起動処理には含まれません。現在の構成はローカル開発または単一サーバープロセスでの実行を対象とします。
-
-## 5. ソースの責務
-
-| ファイル・ディレクトリ | 責務 |
+| 場所 | 責務 |
 | --- | --- |
-| `src/App.tsx` | API の定期確認、統計、地図、検索、並べ替え、一覧、詳細、履歴グラフ |
-| `src/styles.css` | デスクトップ・スマートフォン向け表示 |
-| `src/components/world-land.ts` | 同梱する簡易地図の陸地データ |
-| `src/main.tsx` | React の起動 |
-| `server/index.ts` | `.env` 読み込み、DB・サービスの生成、HTTP 待ち受け、終了処理 |
-| `server/app.ts` | 入力チェック、API 応答、エラー応答、静的ファイル配信 |
-| `server/service.ts` | モード切り替え、共有キャッシュ、取得期限、状態判定、保存との連携 |
-| `server/opensky.ts` | 外部 API、OAuth、制限・タイムアウト対処、状態ベクトルの検証と変換 |
-| `server/demo.ts` | 架空の機体と履歴を生成 |
-| `server/database.ts` | SQLite スキーマ、移行、トランザクション、履歴の保存期間 |
-| `server/init-db.ts` | DB だけを初期化するコマンド |
-| `shared/types.ts` | フロントエンドとバックエンドが共有する API 型 |
-| `tests/` | バックエンド・ブラウザーテスト |
+| `src/` | 画面、データ要求、検索状態、鮮度、レスポンシブ、Canvas 地図 |
+| `public/` とビルド補助 | manifest / アイコン / Service Worker、画面だけのキャッシュ |
+| `shared/types.ts` | 集計・ページ一覧・地図・詳細の共通 API 型 |
+| `server/query.ts` | 許可クエリ、型、長さ、上限、範囲の検証 |
+| `server/app.ts` | ルーティング、静的ファイル、エラー、安全な応答 |
+| `server/security.ts` | Helmet、CSP、API 制限、圧縮、キャッシュ / プロキシ設定 |
+| `server/service.ts` | モード別キャッシュ、同時取得の共用、更新期限、バックグラウンド更新 |
+| `server/opensky.ts` | OAuth と状態ベクトル取得、解析、429 / 401 とタイムアウト |
+| `server/database.ts` | SQLite v2 移行、現在値、履歴、取得期限の保存 |
+| `Dockerfile` / `compose.yml` / `Caddyfile` | ビルド済み実行、非 root、永続領域、HTTPS 例 |
+| `.github/` | CI、依存更新、Issue / PR の記録 |
 
-現在の画面はダッシュボード応答に含まれる機体から詳細を表示します。詳細取得 API も提供しますが、画面の機体選択ごとに追加の詳細 API 通信を行う構成ではありません。
+## 3. 通信量の削減
 
-## 6. 観測を取得する流れ
+旧 `/api/dashboard` は全機体を返す互換 API として維持する。新画面は機体を含まない `/summary`、標準 8 件の `/flights`、範囲内の軽量位置だけの `/map`、一機の `/flights/:icao24` を利用する。全体集計と検索結果 / 地図対象数を区別する。
+
+地図は遅延 import、Canvas 描画。UI 標準上限はスマートフォン 200 / PC 600、API 上限 1,000。API は gzip と ETag に対応し、Cache-Control は private / 再検証。画面は正確な URL ごとのメモリーキャッシュを最大 30 件に制限し、手動で ETag を再検証する。非表示 / オフラインではポーリングを止め、復帰すると確認する。Service Worker の観測キャッシュは利用しない。
+
+ビルドには gzip のサイズ予算を含める。初期 JS 120 KiB、全 JS 300 KiB、CSS 40 KiB が上限。静的 import の初期グラフに地図 vendor が含まれないことも確認する。これは通信 / コードの予算で、実端末の応答時間や大量の同時アクセスの保証ではない。
+
+## 4. データ取得と期限
 
 ```mermaid
 sequenceDiagram
     participant B as ブラウザー
-    participant A as Express
-    participant S as FlightService
-    participant P as OpenSkyProvider
+    participant A as FlightService
     participant D as SQLite
-    B->>A: GET /api/dashboard?mode=live
-    A->>S: dashboard(live)
-    alt 取得期限前
-        S->>D: 保存履歴を読む
-        S-->>A: キャッシュと履歴
-    else 取得期限に到達
-        S->>P: 観測取得（同時要求で共用）
-        P-->>S: 観測値または取得失敗
-        alt 取得・保存に成功
-            S->>D: 最新状態・機体・履歴を一括保存
-        else 取得・保存に失敗
-            S->>S: 保存済み実データの有無で状態を判定
+    participant O as OpenSky
+    B->>A: summary / list / map / detail
+    alt 次回取得期限前
+        A-->>B: 共有する最新状態
+    else 期限到来
+        A->>O: 一回の外部取得（同時要求で共用）
+        alt 成功
+            O-->>A: 状態ベクトルと観測時刻
+            A->>D: 現在値・件数履歴・次回期限を保存
+            A-->>B: 必要な集計 / ページ / 範囲 / 詳細
+        else エラー / 429
+            A->>D: 待機期限と秘密を含まないエラー
+            A-->>B: stale または unavailable
         end
-        S->>D: 保存履歴を読む
-        S-->>A: 状態・次回取得期限・データ
     end
-    A-->>B: JSON / Cache-Control: no-store
 ```
 
-外部取得は、ダッシュボードまたは詳細 API への要求が来て、取得期限に達している場合に実行します。サーバー起動だけで継続取得するバックグラウンドジョブはありません。画面を閉じて誰も要求しなければ、その間の実測履歴は新しく保存されません。
+匿名標準 900 秒 / OAuth 標準 120 秒。更新ボタンも期限を守る。ブラウザーはローカル API の状態を確認するが、それが毎回外部 API を呼ぶ意味ではない。期限・失敗待機を `provider_state` に保存するため、スナップショットがない場合も再起動で待機を解除しない。
 
-同一プロセス内でライブ取得中に届いた要求は、同じ `Promise` の完了を待ちます。複数閲覧者や画面の更新ボタンが同時に動いても、そのプロセスの外部取得をまとめて処理します。この共有はプロセス内だけです。複数プロセスや複数サーバー間で取得期限を同期する Redis・分散ロックは実装していません。
+本番は `BACKGROUND_REFRESH=true` を標準とし、閲覧者がいない間もライブの期限を管理する。開発は明示的な設定で有効化できる。同時の要求と背景取得で外部取得を重複させない。停止は背景処理を停止し、実行中の取得を待って DB を閉じる。
 
-## 7. 更新間隔と鮮度
+## 5. データ品質と状態
 
-| 対象 | 標準間隔 | 補足 |
-| --- | --- | --- |
-| 匿名 OpenSky 取得 | 900 秒 | サーバーが期限を管理 |
-| OAuth OpenSky 取得 | 120 秒 | ID とシークレットの両方を設定した場合 |
-| ライブ画面のローカル API 確認 | 通常 30 秒 | 成功後は `max(5, min(30, pollIntervalSeconds))` 秒 |
-| デモの生成・画面確認 | 10 秒 | 外部 API を使用しない |
-| 画面からローカル API へ接続失敗後 | ライブ 60 秒 / デモ 10 秒 | 画面側の再試行間隔 |
+OpenSky の通信時刻、位置時刻、範囲、測定値を検証し、飛行中の重複機体を最新通信で一意にする。地図は有効な位置だけ、機数と一覧は位置欠損も含む。正常な空観測は 0、不正応答 / 失敗は unavailable または stale。
 
-`POLL_INTERVAL_SECONDS` は 10〜86,400 の有限数を受け付け、小数は切り上げます。未指定なら認証情報の有無から標準値を選びます。匿名の全世界取得は 1 回につき 4 クレジット、標準の匿名日次枠は 400 クレジット / IP です。900 秒で継続取得すると最大 96 回 / 日となります。OAuth の標準日次枠は 4,000 クレジットですが、実際の枠・共有 IP の利用・提供側の変更に依存します。利用前に [OpenSky の公式仕様](https://openskynetwork.github.io/opensky-api/rest.html) を確認してください。
+観測時刻から 120 秒を超えると古い状態。実データとデモの DB / キャッシュ / 履歴を分離する。保存済みより古い観測は拒否する。デモは明示的な選択だけで、ライブ失敗の代用にしない。
 
-「ライブ」は、新しい取得に成功し、観測時刻からの経過が 120 秒以内である状態です。120 秒を超えると、取得期限前でも「古いデータ」の表示になります。匿名 900 秒設定では、正常運転中も次回取得まで古いデータを表示する時間が生じます。画面の時計を 1 秒ごとに更新しても、機体の位置を毎秒新規取得したり、未観測の位置を補間したりする処理はありません。
+## 6. OAuth と外部 API
 
-## 8. 取得値の検証と集計
+サーバーが `client_credentials` でトークンを取得し、期限付きでメモリー内に保持する。認証拒否時は一度更新し、無限に再試行しない。トークン、ID、secret を API 応答に含めない。外部通信はタイムアウト付き。Node.js の `--use-env-proxy` で環境の HTTPS プロキシに対応し、TLS の検証を維持する。
 
-1. 応答の観測時刻と `states` の形を確認します。`states: null` と空配列は正当な 0 件として扱います。
-2. ICAO24 が 6 桁の 16 進数、`on_ground` が真偽値、最終通信時刻が有効な行を採用します。
-3. 最終通信が観測時刻より 120 秒を超えて古い行、30 秒を超えて未来の行を除外します。
-4. ICAO24 は小文字へ統一し、重複時は最終通信が新しい状態を残します。
-5. 地上の機体を詳細一覧から除外します。`totalObserved` は、この除外前の有効な機体数です。
-6. 位置が有効範囲かつ位置時刻が新しい場合だけ緯度・経度を採用します。位置がなくても飛行中の集計には含めます。
-7. 高度は幾何高度を優先し、欠損時は気圧高度を使います。範囲外・欠損の値は `null` にします。
+`OPENSKY_CLIENT_ID` と `OPENSKY_CLIENT_SECRET` は対で指定。実クライアントは未用意なので、認証処理のモック確認と実 OAuth の成功を区別する。取得枠と利用条件は公開時に確認する。
 
-サーバーが受け入れる観測時刻にも、現在時刻に対して過去 120 秒 / 未来 30 秒の上限があります。各数値の範囲・単位は [API 仕様書](06-api-specification.md) に記載します。
+## 7. PWA とオフライン
 
-地図は位置を持つ検索対象を最大 1,200 機に間引き、選択中の機体をその範囲に含めます。集計・検索・一覧の対象機数を 1,200 機に切り詰める処理ではありません。一覧は 1 ページ 8 件で、検索・並べ替え・ページ処理はブラウザー内で行います。API のサーバー側ページ分割はありません。
+manifest とアイコンを配信し、ビルド後の同一オリジンの画面基本ファイルを Service Worker に登録する。API URL、外部タイル、他オリジンをキャッシュしない。オフライン起動では画面を利用できても、現在の機数は取得できないことを案内する。ページが開いたままの最後の観測は通信状態 / 鮮度と合わせて扱う。
 
-## 9. 障害と再起動
+HTTPS（開発 localhost を除く）が必要。OS / ブラウザーによりインストール操作が異なる。アプリ更新時のキャッシュ切替も公開先で確認する。
 
-| 状況 | 動作 |
-| --- | --- |
-| 外部取得失敗・保存済み実データあり | `status: stale` と最後の実データを返す |
-| 外部取得失敗・保存済み実データなし | `status: unavailable`、空の機体一覧、取得時刻 `null` を返す |
-| 保存失敗 | トランザクションを戻し、前回データを維持する |
-| HTTP 429 | 返却ヘッダーから待機時間を取得し、次回まで外部取得を控える |
-| OAuth 利用中の HTTP 401 | キャッシュ済みトークンを破棄し、一度再取得して要求を再送する |
-| 再送後も 401 / 403 | エラーを表示し、再試行期限まで待つ |
-| 地図タイル障害 | 同梱の簡易背景を表示する |
-| API プロセス再起動 | DB の最新状態を読み出し、保存取得時刻と現在の設定から次回期限を復元する |
+## 8. 公開と安全性
 
-外部 HTTP 要求ごとのタイムアウトは 8 秒です。OAuth トークン取得と観測取得が連続する場合、処理全体の時間は 8 秒を超える可能性があります。ブラウザーのローカル API 要求タイムアウトは 10 秒です。
+Helmet / CSP、読み取り API の IP 制限、クエリの厳格検証、パラメーター化した SQL を用いる。CSP は同一オリジンの script を許可し、Leaflet の動的配置用 style の `unsafe-inline` は許容する。直接起動で転送ヘッダーを信用せず、Caddy の内部経路では構成に合わせた 1 段を信頼する。
 
-失敗後のサーバー取得待機は `max(設定取得間隔, 失敗種別の待機秒数)` です。429 の待機ヘッダーは 60〜86,400 秒に調整し、ヘッダーが不明なら 900 秒を使います。OAuth 不備・認証拒否・アクセス拒否は通常 300 秒、一般の接続・形式エラーは通常 60 秒を下限とします。
+本番ビルドはサーバーを `dist-server/` へコンパイルし、`npm start` は JavaScript を Node.js で起動する。実行時は開発依存を除外可能。API の Docker コンテナーは非 root、API ポートは Compose 内だけ、DB は永続領域。Caddy のドメインと証明書発行用メールは利用者が指定する。
 
-再起動時は、保存状態を最初は `stale` として扱います。正常取得の期限は DB の `fetched_at` から復元しますが、失敗の追加待機・429 制限・OAuth トークンはメモリーに保持するため再起動で失われます。再起動によって API 制限が解除されることを保証する構成ではありません。
+## 9. 制約
 
-## 10. 設定と接続先
+SQLite とメモリーの API 制限は単一インスタンスを前提とする。多台数化には取得ジョブと制限 / DB の共有設計が必要。CSP やレート制限だけで DDoS を防げるとは扱わない。公開先の監視・ログ・容量・復旧・負荷の検証を別に行う。
 
-| 設定 | 標準値・用途 |
-| --- | --- |
-| `PORT` | `3001`。1〜65,535 の整数 |
-| `HOST` | 未設定なら `0.0.0.0`。`.env.example` ではローカル利用向けに `127.0.0.1` |
-| `DATABASE_PATH` | `data/flights.sqlite`。DB ファイルの保存先 |
-| `OPENSKY_CLIENT_ID` | 任意。OAuth API クライアント ID |
-| `OPENSKY_CLIENT_SECRET` | 任意。OAuth API クライアントのシークレット |
-| `POLL_INTERVAL_SECONDS` | 任意。ライブ取得間隔の変更 |
-
-`.env` はサーバー起動時に読み込みます。`VITE_` 接頭辞へ秘密の値を入れたり、ブラウザーへ OAuth 情報を返したりしません。ブラウザーには、ヘルス API の「認証情報の両方が設定されているか」という真偽値だけが返ります。この値は認証成功の保証ではありません。
-
-| 接続先 | 接続する側 | 用途 |
-| --- | --- | --- |
-| `registry.npmjs.org` | 開発・セットアップ環境 | npm パッケージ導入 |
-| `opensky-network.org` | API サーバー | 全世界の状態ベクトル取得 |
-| `auth.opensky-network.org` | API サーバー | OAuth 設定時のトークン取得 |
-| `basemaps.cartocdn.com` | ブラウザー | 地図タイル取得 |
-
-`dev:server` と `start` は Node.js の `--use-env-proxy` を有効にします。HTTPS プロキシが必要な環境でも TLS 証明書の検証を維持します。証明書検証を無効にする設定は使用しません。
-
-## 11. 現在の運用範囲
-
-API を読む利用者のログイン・権限制御、分散キャッシュ、定期バックグラウンド収集、機体ごとの航跡保存、リアルタイム WebSocket 配信、デプロイの自動化は現在の実装範囲に含まれません。公開運用でこれらが必要な場合は、追加要件として設計・実装します。OpenSky データの利用条件と地図の帰属表示は公開時にも確認し、帰属表示を維持してください。
-
-## 12. 実装・公式資料
-
-- 実装: [API 起動処理](../server/index.ts)、[ルーティング](../server/app.ts)、[サービス](../server/service.ts)、[OpenSky 連携](../server/opensky.ts)、[画面](../src/App.tsx)、[Vite 設定](../vite.config.ts)
-- [OpenSky REST API 公式仕様](https://openskynetwork.github.io/opensky-api/rest.html)
-- [Node.js SQLite 公式資料](https://nodejs.org/api/sqlite.html)
-- [Node.js CLI 公式資料](https://nodejs.org/api/cli.html)
-- [Natural Earth データ利用条件](https://www.naturalearthdata.com/about/terms-of-use/)
-
-[ドキュメント一覧へ戻る](README.md)
+[DB 設計](05-database-design.md) · [API 仕様](06-api-specification.md) · [運用手順](11-operations.md) · [資料一覧](README.md)

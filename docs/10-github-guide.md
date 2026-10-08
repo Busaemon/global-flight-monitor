@@ -1,6 +1,6 @@
 # ソースと資料の変更を GitHub に送信する
 
-対象リポジトリは `Busaemon/global-flight-monitor` です。アプリと11種類の資料はすでに `main` にあります。このガイドは、お使いの PC で今後の変更を作り、作業ブランチから Pull Request を送信する手順です。
+対象リポジトリは `Busaemon/global-flight-monitor` です。`main` は取り込み済みの版、Pull Request はレビュー中の変更です。このガイドは、ソース・PWA・公開設定・資料を作業ブランチから Pull Request へまとめる手順です。
 
 アプリを既存フォルダーへ配置して起動する手順は [Windows 導入ガイド](09-windows-setup.md) にあります。配置スクリプトと ZIP のコピーはファイルを追加するだけで、ローカルの Git 履歴を GitHub と同期しません。既存の `.git` があることだけでは、GitHub の `main` と同じ履歴であるとは限りません。
 
@@ -45,6 +45,7 @@ git diff
 ```powershell
 npm.cmd test
 npm.cmd run build
+npm.cmd audit --audit-level=high
 # 画面を変更した場合は、Chromium を導入済みの環境で実行
 npm.cmd run test:e2e
 ```
@@ -68,17 +69,20 @@ git diff --cached
 | `docs/` | 企画書・要件定義・画面仕様・設計・API・テスト・運用 |
 | `scripts/`、`.vscode/` | セットアップと VS Code のタスク |
 | `tests/`、`playwright.config.ts` | 自動テスト |
-| `.github/` | バグ報告・機能提案・PR のテンプレート |
+| `.github/` | CI、Dependabot、バグ報告・機能提案・PR のテンプレート |
+| `public/` | PWA の manifest・アイコン・Service Worker テンプレート |
+| `Dockerfile`、`compose.yml`、`Caddyfile` | 公開構成例。実ドメイン / 秘密は例に入れない |
+| `SECURITY.md`、`CONTRIBUTING.md` | 脆弱性の報告経路・開発方針 |
 | `package.json`、`package-lock.json`、各設定 | 依存関係・設定 |
 | `README.md`、`START-HERE.md` | リポジトリの入口と初回導入 |
 | `.gitignore`、`.gitattributes`、`.env.example`、`.nvmrc` | Git の除外・改行・任意設定見本・Node バージョン |
 
-`.env`、`node_modules/`、`data/`、`dist/`、テスト生成物は `.gitignore` により追加されません。DB やビルド済みファイルは各 PC で作成します。すでに追跡されているファイルは `.gitignore` だけでは除外されないため、コミットする差分にも秘密の値や DB がないことを確認します。
+`.env`、`node_modules/`、`data/`、`dist/`、`dist-server/`、テスト生成物は `.gitignore` により追加されません。DB やビルド済みファイルは各 PC で作成します。すでに追跡されているファイルは `.gitignore` だけでは除外されないため、コミットする差分にも秘密の値や DB がないことを確認します。
 
 確認できたら、変更内容が伝わるメッセージでコミットします。
 
 ```powershell
-git commit -m "Update flight monitor app and documentation"
+git commit -m "一覧をページ取得に変更してスマートフォンの通信量を削減"
 ```
 
 Git に名前・メールが未設定というエラーが出たときだけ、自分の情報をリポジトリ単位で設定し、コミットを再実行します。GitHub の非公開メール設定を利用することもできます。
@@ -106,6 +110,45 @@ git push -u origin HEAD
 - `.env`・実 DB・`node_modules` が含まれていない。
 
 PR を確認して `main` へ取り込むと、ソースと関連資料が同じ履歴に記録されます。以後の変更も、最新の `origin/main` から別の作業ブランチを作って進めます。
+
+## 6. CI と依存更新
+
+[CI 定義](../.github/workflows/ci.yml) は main への push、main 向け PR、手動実行に対応します。Node.js 24、lockfile、バックエンドテスト、型検査 / ビルド（サイズ予算を含む）、開発依存を含む監査、Chromium の画面検証を実行します。失敗時のブラウザー診断は 7 日保存します。
+
+Action は確認した commit SHA に固定し、権限は contents: read、checkout の資格情報を保持しません。PR のコードを秘密のトークンで実行する `pull_request_target` は使用しません。[Dependabot](../.github/dependabot.yml) は npm と Action の更新を週ごとに提案します。更新 PR もテストを確認してから取り込みます。
+
+CI ファイルがあることと、GitHub 側で Actions が許可され実行成功していることは別です。Actions タブで権限 / 実行ログを確認してください。Fork / 初回 contributor には GitHub が実行承認を求める場合があります。
+
+## 7. 管理者が GitHub 上で確認する項目
+
+- main の保護設定または Ruleset で、レビューと CI の成功を取り込み条件にするか運用方針を決める。
+- Security の private vulnerability reporting を有効にし、SECURITY.md の経路と一致させる。
+- Dependabot alerts / security updates と Actions の許可を確認する。
+- 公開資格情報や実 DB をリポジトリの内容 / Issue / Artifact に保存しない。
+- プロジェクトの利用許諾を決める。現在の `private: true` は npm 公開を防ぐ設定で、ソースや OpenSky データの利用許諾を与えるものではない。
+- リリース時はコミットと公開設定 / 移行 / 未検証項目を記録する。公開 URL が実在しない間は README の公開済みリンクを作らない。
+
+これらの GitHub 設定は、ファイルを追加しただけで変更済みになるものではありません。管理者の実際の設定を確認します。
+
+## 8. GitHub の About に入れる説明
+
+2026-10-08（日本時間）の確認では description / homepage は未設定、topics は空です。利用可能な GitHub 連携から管理項目を更新する要求は HTTP 403 となり、更新できていません。これは GitHub 側の連携権限の制限で、自動承認レビューによる拒否ではありません。ソース / PR の更新と About の管理権限は別です。
+
+管理者がリポジトリのトップページの「About」の編集から、次を設定できます。
+
+**Description**
+
+```text
+OpenSkyの観測データで飛行中の機数・地図・機体詳細を確認するWeb/PWA。React・TypeScript・Node.js・SQLite。
+```
+
+**Topics**
+
+```text
+react typescript pwa opensky flight-tracking sqlite
+```
+
+**Website** は正式な HTTPS 公開先が決まって実際に動作してから入力します。架空の公開 URL や PC の localhost を登録しません。private vulnerability reporting も同じ連携からの有効化は 403 で未完了のため、管理者が Settings の Security 関連設定で有効化し、Security タブの報告入口を確認してください。
 
 ## 今後の資料更新
 

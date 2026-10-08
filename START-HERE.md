@@ -1,10 +1,21 @@
 # 既存フォルダーに追加して起動する
 
-画像の VS Code にある `global-flight-monitor` フォルダーを、そのまま使えます。
+VS Code で既存の `global-flight-monitor` フォルダーを開き、「ターミナル」→「新しいターミナル」で PowerShell を開きます。`Get-Location` で目的のフォルダーを確認してください。Node.js **24.5 以上**と Git が必要です。
 
-VS Code の「ターミナル」→「新しいターミナル」で PowerShell を開き、`Get-Location` が既存の `global-flight-monitor` フォルダーを指していることを確認します。Node.js **24.5 以上**と Git が必要です。
+## ファイルがすでにある場合
 
-GitHub にある完成版を一時フォルダーへ取得し、必要なファイルだけ既存フォルダーへ追加します。次をまとめて貼り付けてください。
+`Test-Path .\package.json` が `True` になるフォルダーで実行します。
+
+```powershell
+npm.cmd run setup
+npm.cmd run dev
+```
+
+画面は自分の PC の `http://localhost:5173`。初期表示は実データです。取得できない場合は状態を表示し、明示的にデモを選ぶと合成データで操作確認できます。停止は `Ctrl+C`、次回の起動は `npm.cmd run dev` です。
+
+## GitHub の main から既存フォルダーへ追加する場合
+
+このアプリを停止してから、以下をまとめて貼り付けます。これは **GitHub の `main` に取り込み済みの版**を取得します。レビュー中の PR の版を適用する場合は、PR に記載されたブランチを確認して `--branch main` を置き換えます。
 
 ```powershell
 & {
@@ -19,25 +30,14 @@ GitHub にある完成版を一時フォルダーへ取得し、必要なファ�
 }
 ```
 
-配置スクリプトは、既存の `.git`・`.env`・DB・追加ファイルを保持します。同名のアプリファイルを変更する場合は、変更前のファイルを OS の一時フォルダーへバックアップし、その場所を表示します。アプリを停止してから実行してください。GitHub の認証画面が出た場合は、通常の GitHub サインインを行います。
+配置スクリプトは `.git`・`.env`・DB・独自の追加ファイルを保持し、変更する同名ファイルは OS の一時フォルダーへバックアップします。バックアップの場所は実行結果に表示されます。既存フォルダーの Git 履歴を GitHub と同期する処理は行いません。GitHub が非公開の場合は Git が表示する通常のサインインを使用します。
 
-すでにファイルを配置済みの場合は、`Test-Path .\package.json` が `True` になるフォルダーで次の2コマンドだけを実行できます。
+## スマートフォンとホーム画面
 
-```powershell
-npm.cmd run setup
-npm.cmd run dev
-```
+スマートフォンにも対応した画面です。PWA をホーム画面に追加するには、自分のサーバーへ HTTPS で公開してください。スマートフォンの `localhost` はスマートフォン自身を指すため、PC の `http://localhost:5173` をそのまま入力しても接続できません。
 
-`setup` が依存関係をインストールし、SQLite データベースを作成し、型検査と画面のビルドを行います。既存の DB を削除しません。Node.js **24.5 以上**が必要です。`node --version` で確認できます。
+公開先と OpenSky の OAuth クライアントはまだ未確定です。コード内のデモを実データに見せかける設定はありません。OAuth 未設定でも匿名取得は利用できますが、標準の外部更新間隔は 15 分です。公開手順・必要な設定・未検証項目は [運用手順](docs/11-operations.md) と [公開前チェック](docs/deployment-checklist.md) に記載しています。
 
-開発画面は、ご自身の PC のブラウザーから `http://localhost:5173` で開きます。停止はターミナルで `Ctrl+C` を押します。次回は `npm.cmd run dev` だけで起動できます。
+## 詳しい資料
 
-実データは OpenSky の観測範囲の値です。匿名アクセスの標準更新間隔は15分、OAuth 設定時は2分です。「デモ」では合成データで操作を確認できます。データソースの制限を含む仕様は [要件定義](docs/02-requirements.md) に記載しています。
-
-## 資料も一緒に GitHub へ追加する
-
-企画書・要件定義・画面仕様・技術設計・DB 設計・API 仕様・テスト仕様などを `docs/` に同梱しています。[資料一覧](docs/README.md) と [GitHub 追加手順](docs/10-github-guide.md) を参照してください。ソースと資料を1つのコミットで追加できます。
-
-GitHub の「Code」→「Download ZIP」を使う場合は、展開後の `global-flight-monitor-main` フォルダーの**中身**を既存フォルダーへコピーします。ZIP には Git 履歴が含まれません。同名のファイルがある場合は、コピー前に既存フォルダーをバックアップしてください。
-
-詳しいフォルダー構成・セットアップ・困った場合の対応は [Windows / VS Code 導入ガイド](docs/09-windows-setup.md) にあります。
+[企画・要件・設計などの資料一覧](docs/README.md) · [Windows / VS Code 手順とトラブル対応](docs/09-windows-setup.md) · [GitHub への変更の送り方](docs/10-github-guide.md)

@@ -1,177 +1,97 @@
 # Windows・VS Code 導入ガイド
 
-対象は、VS Code で既に開いている `global-flight-monitor` フォルダーです。新しい Vite プロジェクトを作成する必要はありません。配布ファイルには、画面・API・DB 初期化・設定・資料を含めています。
+## 1. 必要な環境
 
-## 1. 既存フォルダーに追加する
-
-VS Code の既存フォルダーの PowerShell ターミナルで次をまとめて実行します。Git と Node.js 24.5 以上が必要です。ZIP のダウンロードは不要です。
+Node.js **24.5.0 以上**、npm、Git、VS Code、PowerShell。追加の DB サーバーや `sqlite3` CLI は不要。通常のローカル開発に Docker は不要で、HTTPS 公開例を使用する場合に Docker / Compose を用意する。
 
 ```powershell
-& {
-    $incoming = Join-Path ([IO.Path]::GetTempPath()) ("skytrace-" + [guid]::NewGuid().ToString("N"))
-    git clone --depth 1 --branch main https://github.com/Busaemon/global-flight-monitor.git $incoming
-    if ($LASTEXITCODE -ne 0) { throw "GitHub からの取得に失敗しました。" }
-    node (Join-Path $incoming "scripts/install-existing-folder.mjs") .
-    if ($LASTEXITCODE -ne 0) { throw "ファイルの配置に失敗しました。" }
-    npm.cmd run setup
-    if ($LASTEXITCODE -ne 0) { throw "セットアップに失敗しました。" }
-    npm.cmd run dev
-}
-```
-
-一時フォルダーに取得したファイルから、必要なソース・設定・資料だけを追加します。既存の `.git`・`.env`・`data`・独自ファイルは保持します。同名のファイルを変更する場合は先にバックアップを作り、その場所を表示します。後続のコマンドは取得・配置・セットアップの成功後に実行されます。GitHub の認証画面が出た場合は、通常のサインインを使います。既存のアプリが起動している場合は停止してから実行してください。
-
-成功後は手順4の画面確認へ進めます。次回の起動は `npm.cmd run dev` だけです。
-
-**GitHub の ZIP を利用する場合の配置方法：**
-
-1. [GitHub のリポジトリ](https://github.com/Busaemon/global-flight-monitor)で `main` を選び、「Code」→「Download ZIP」をクリックします。
-2. ZIP を別の場所へ展開し、`global-flight-monitor-main` フォルダーを開きます。
-3. すでに同名のソースや設定がある場合は、既存フォルダーをバックアップして置き換える内容を確認します。独自の `.env` や DB はそのまま使います。
-4. `global-flight-monitor-main` フォルダーの**中身**を、既存の `global-flight-monitor` へコピーします。既存の `.git` は維持します。GitHub の ZIP には Git 履歴を含めていません。
-5. VS Code のエクスプローラーで、直下に `package.json`・`src`・`server`・`docs` が見えることを確認します。
-
-`global-flight-monitor-main` フォルダー自体ではなく、中のファイルとフォルダーをコピーします。既存フォルダーの直下に `package.json` がある構成にしてください。
-
-完成後の主な構成は次のとおりです。
-
-```text
-global-flight-monitor/
-├── .github/                 # GitHub の Issue / PR テンプレート
-├── .vscode/tasks.json       # VS Code の実行タスク
-├── docs/                   # 企画・要件・設計・テスト・運用資料
-├── scripts/                # 初回セットアップ・PowerShell 補助
-├── server/                 # Node.js / Express / SQLite
-├── shared/types.ts         # 画面と API の共通型
-├── src/                    # React / TypeScript の画面
-├── tests/                  # バックエンド・ブラウザーテスト
-├── .env.example            # 任意の設定の見本
-├── .gitignore
-├── index.html
-├── package.json
-├── package-lock.json
-├── README.md
-├── START-HERE.md
-├── tsconfig.json
-├── tsconfig.server.json
-├── playwright.config.ts
-└── vite.config.ts
-```
-
-`node_modules`、`data`、`dist` は実行時に作成します。これらを別の PC からコピーする必要はありません。
-
-## 2. 必要なバージョンを確認する
-
-VS Code の「ターミナル」→「新しいターミナル」で PowerShell を開きます。
-
-```powershell
-Get-Location
-Test-Path .\package.json
 node --version
 npm.cmd --version
 git --version
+Get-Location
 ```
 
-`Test-Path` は `True`、Node.js は **24.5 以上**が必要です。Node.js 24 の配布版には SQLite が含まれているため、DB サーバーや DB 管理ソフトのインストールは不要です。Node.js を更新した場合は VS Code とターミナルを開き直します。
+`npm.cmd` は Windows の npm 実行ファイルで、PowerShell の `npm.ps1` の実行ポリシーに依存しない。この手順は Linux での Node.js 導入 / ファイル配置を検証した構成に基づく。Windows ネイティブでの実行記録は [テスト仕様](07-test-specification.md) を確認する。
 
-`False` の場合は、VS Code の「ファイル」→「フォルダーを開く」で既存の `global-flight-monitor` を選び直し、新しいターミナルを開きます。
+## 2. 既存フォルダーへ配置する
 
-## 3. 初回セットアップを実行する
+VS Code で既存の `global-flight-monitor` を開く。このアプリを起動していたら `Ctrl+C` で停止してから実行する。[START-HERE](../START-HERE.md) の PowerShell 一括コマンドで GitHub の `main` を取得し、必要なソースと資料を既存フォルダーへ追加する。ZIP は必要ない。
+
+レビュー中の PR の変更は `main` に含まれるとは限らない。PR のブランチを確認し、取得コマンドの `--branch main` を対応するブランチへ置き換える。
+
+配置処理は `.git`・`.env`・`data/`・独自ファイルを保持する。同名の変更前ファイルを一時フォルダーへ保存し、その場所を表示する。シンボリックリンクや通常と異なる対象は配置前に検証する。ファイル配置はローカル Git 履歴の同期ではない。今後の開発は [GitHub ガイド](10-github-guide.md) に従う。
+
+## 3. 初回の準備
+
+`package.json` のあるフォルダーで実行する。
 
 ```powershell
+Test-Path .\package.json
 npm.cmd run setup
 ```
 
-この1コマンドで、順番に次を実行します。エラーが出た場合は後続処理を止めます。
+`setup` は Node / SQLite の確認、`npm ci`、DB 初期化、型検査、画面 / サーバー / PWA のビルド、サイズ予算の確認を順に行う。既存 DB を削除しない。DB v1 はデータを保持して v2 へ移行する。既存 DB に重要な履歴がある場合は、アプリ停止後のバックアップを先に取る。
 
-| 順番 | 処理 | 作られるもの |
-| --- | --- | --- |
-| 1 | Node.js のバージョンと SQLite を確認 | DB を変更しない確認 |
-| 2 | `npm ci` で lockfile の依存関係をインストール | `node_modules/` |
-| 3 | `npm run db:init` | `data/flights.sqlite`・初期テーブル |
-| 4 | `npm run build` | TypeScript の型検査と `dist/` |
-
-設定ファイルの `.env` は必須ではありません。DB はすでに存在すればその内容を保持します。npm キャッシュは `NPM_CONFIG_CACHE`、`npm_config_cache` の順に既存の設定を使い、どちらもない場合は OS の一時ディレクトリ内に置きます。
-
-## 4. 開発画面を起動する
-
-```powershell
-npm.cmd run dev
-```
-
-ブラウザーで、自分の PC の `http://localhost:5173` を開きます。API はポート 3001 で同時に起動します。ターミナルは開いたままにしてください。
-
-1. 観測数と観測時刻が表示されることを確認します。
-2. 外部データが取得できない場合は「デモ」を選び、表示と操作を確認します。
-3. フライト一覧で便名・ICAO24・登録国を検索します。
-4. 地図の機体、または一覧から機体を選び、高度・速度・位置などの詳細を確認します。
-5. 停止する場合は起動したターミナルで `Ctrl+C` を押します。
-
-次回は `npm.cmd run dev` だけで起動できます。依存関係が変更された場合は、アプリを停止して `npm.cmd run setup` を再実行します。
-
-## 5. VS Code のタスクから実行する
-
-「ターミナル」→「タスクの実行」から、次のタスクを選べます。
-
-- `SKYTRACE: 初回セットアップ`
-- `SKYTRACE: 開発起動`
-- `SKYTRACE: ビルド`
-- `SKYTRACE: バックエンドテスト`
-
-Windows 用タスクは `npm.cmd` を使用します。PowerShell の実行ポリシーを変更しなくても、npm のコマンドで実行できます。
-
-補助スクリプトも同梱しています。
-
-```powershell
-.\scripts\setup.ps1
-.\scripts\start.ps1
-# ビルド済み画面を起動する場合
-.\scripts\start.ps1 -Production
-```
-
-端末のポリシーで `.ps1` が許可されていない場合は、上の補助スクリプトを使わず `npm.cmd` のコマンドを使ってください。PowerShell 補助はプロジェクトの場所へ移動して実行し、終了後に元の場所へ戻ります。
-
-## 6. 任意の API 設定
-
-匿名アクセスでも利用できます。匿名は15分間隔、OAuth クライアントを設定した場合は標準2分間隔です。画面はサーバーのキャッシュを確認するため、更新ボタンを押しても API の取得上限を回避しません。
-
-設定したい場合だけ次を実行します。すでに `.env` がある場合は作り直さず、既存のファイルを編集します。
+任意のローカル設定は、既存 `.env` を保持したまま作る。
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-OAuth の `OPENSKY_CLIENT_ID` と `OPENSKY_CLIENT_SECRET` は `.env` またはサーバーの環境設定へ入れます。値は GitHub に含めません。画面はこれらの秘密の値を受け取りません。
+`.env` の OAuth ID / secret はサーバー専用。未用意なら空のままで匿名利用する。匿名の全世界更新は標準 15 分。OAuth は正式クライアントを発行して両値を設定し、再起動して確認する。チャットや GitHub へ値を送らない。
 
-## 7. テスト・ビルド済み起動
+## 4. 開発起動
+
+```powershell
+npm.cmd run dev
+```
+
+画面はご自身の PC の `http://localhost:5173`、API は 3001。ライブが初期表示で、出典・観測時刻・取得時刻・次回予定を確認する。実データが使えない場合も自動で合成データにならない。明示的にデモを選ぶと操作確認できる。
+
+停止は起動したターミナルの `Ctrl+C`。次回は `npm.cmd run dev`。開発は `.env.example` の `HOST=127.0.0.1` を基本とする。LAN への公開が必要なら自分のネットワークとファイアウォールを確認して待受を設定する。
+
+## 5. ビルド済み画面の確認
+
+開発を停止してから実行する。
+
+```powershell
+npm.cmd run build
+npm.cmd start
+```
+
+`http://localhost:3001` を開く。`npm start` はコンパイル済みの `dist-server/server/index.js` を実行するので、先にビルドが必要。通常の再起動で DB を作り直さない。ビルド済み配置では実行依存のみで動作し、ビルド / テストは開発依存が必要。
+
+## 6. スマートフォン・PWA
+
+スマートフォンにも対応した画面を使える。スマートフォンの `localhost` は PC ではない。正式なホーム画面アプリの確認は HTTPS 公開 URL で行う。iPhone は Safari の共有→ホーム画面に追加、Android は対応ブラウザーのインストール機能を使用する。OS / ブラウザーにより表示は異なる。
+
+PWA は画面の基本ファイルだけを保存する。オフラインでは現在の観測 API を取得できず、その旨を表示する。公開先と OAuth は未確定で、スマートフォンのインストールと公開後の受入は [公開前チェック](deployment-checklist.md) に沿って行う。
+
+## 7. 検証
 
 ```powershell
 npm.cmd test
 npm.cmd run build
-# 初めてブラウザーテストを実行するときだけ
+npm.cmd audit --audit-level=high
 npx.cmd playwright install chromium
 npm.cmd run test:e2e
 ```
 
-開発モードを停止した後、ビルド済みの画面と API を単一ポートで実行できます。
-
-```powershell
-npm.cmd start
-```
-
-この場合は、自分の PC の `http://localhost:3001` を開きます。開発 API と同じポートなので同時起動は避けます。
+テストは主に固定した API 応答を使用する。外部 API の実取得や実スマートフォンを検証したことと区別する。
 
 ## 8. 困った場合
 
-| 状況 | 確認・対応 |
+| 状況 | 対応 |
 | --- | --- |
-| `package.json` が見つからない | `Test-Path .\package.json` とフォルダーの二重配置を確認 |
-| Node.js のバージョンエラー | Node.js 24.5 以上に更新してターミナルを開き直す |
-| `npm.ps1` の実行が拒否される | `npm` ではなく `npm.cmd` を使う |
-| ポートが使用中 | 以前このアプリを起動したターミナルで停止する。ほかのアプリのプロセスを一括停止しない |
-| ライブデータが取得できない | 表示されたエラーと通信先を確認。デモの操作は独立して確認可能 |
-| 地図の詳細が取得できない | 同梱の簡易世界地図に機体を表示。CARTO の通信先を確認 |
-| 再取得しても数字が変わらない | 観測時刻・次回更新時刻・匿名15分間隔を確認 |
-| セットアップが途中で止まる | 表示された最初のエラーを解決後、同じコマンドを再実行。DB の削除は不要 |
+| `package.json` がない | `Get-Location` / `Test-Path` と二重フォルダーを確認 |
+| Node バージョンのエラー | 24.5 以上へ更新してターミナルを開き直す |
+| `npm.ps1` が拒否される | `npm.cmd` を使用 |
+| ポート使用中 | このアプリの前の起動を停止。PC の他の Node プロセスを一括終了しない |
+| `.env` の PORT だけ変更した | 開発の Vite プロキシは 3001 固定。設定の整合を確認 |
+| 実データが不明 / 古い | 回線、観測時刻、OpenSky 状態、匿名 15 分の間隔、429 の待機を確認 |
+| 地図タイルが出ない / API KEY REQUIRED が出る | 最新版へ更新。背景はキー不要の OpenStreetMap に変更済み。`tile.openstreetmap.org` への通信と CSP を確認し、簡易陸地と観測 API の状態を別に調べる |
+| `npm start` がファイルを見つけない | `npm.cmd run build` が成功したか確認 |
+| 設定変更後に 403 / 制限がある | PUBLIC_ORIGIN と実 URL、信頼するプロキシ数を確認。安全性の設定を無条件に解除しない |
+| PWA を追加できない | HTTPS の正式 URL、対応ブラウザー、manifest / Service Worker の配信を確認 |
 
-Windows での受入チェックは [テスト仕様](07-test-specification.md)、設定と DB の管理は [運用手順](11-operations.md)、GitHub への追加は [GitHub ガイド](10-github-guide.md) にあります。
+[運用手順](11-operations.md) · [資料一覧](README.md)

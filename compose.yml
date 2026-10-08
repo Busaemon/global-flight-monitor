@@ -1,0 +1,53 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      DATABASE_PATH: /app/data/flights.sqlite
+      PUBLIC_ORIGIN: https://${DOMAIN:?Set DOMAIN in .env before HTTPS deployment}
+      TRUST_PROXY_HOPS: 1
+      BACKGROUND_REFRESH: "true"
+    expose:
+      - "3001"
+    volumes:
+      - flight-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    stop_grace_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env before HTTPS deployment}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env for certificate renewal notices}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  flight-data:
+  caddy-data:
+  caddy-config:

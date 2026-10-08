@@ -5,6 +5,7 @@ import type { DashboardResponse, DataMode, Flight, HistoryPoint } from '../share
 
 export type StoredSnapshot = Pick<DashboardResponse,
   'mode' | 'source' | 'coverageNote' | 'fetchedAt' | 'observedAt' | 'stats' | 'flights'>;
+export interface ProviderState { nextAttemptAt: number; lastError: string | null }
 
 /** Current state and history are partitioned by mode, including the primary keys. */
 export class FlightDatabase {
@@ -16,14 +17,15 @@ export class FlightDatabase {
     this.connection = new DatabaseSync(path);
     this.connection.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     if (path !== ':memory:') this.connection.exec('PRAGMA journal_mode = WAL;');
-    this.migrate();
+    try { this.migrate(); }
+    catch (error) { this.connection.close(); throw error; }
   }
 
   private migrate() {
     const row = this.connection.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (row.user_version > 1) throw new Error('This database was created by a newer application version.');
-    if (row.user_version === 1) return;
-    this.connection.exec(`
+    if (row.user_version > 2) throw new Error('This database was created by a newer application version.');
+    if (row.user_version === 2) return;
+    if (row.user_version === 0) this.connection.exec(`
       BEGIN IMMEDIATE;
       CREATE TABLE snapshots (
         mode TEXT PRIMARY KEY CHECK (mode IN ('live', 'demo')),
@@ -50,10 +52,31 @@ export class FlightDatabase {
       PRAGMA user_version = 1;
       COMMIT;
     `);
+    this.connection.exec(`
+      BEGIN IMMEDIATE;
+      CREATE TABLE provider_state (
+        provider TEXT PRIMARY KEY CHECK (provider = 'opensky'),
+        next_attempt_at INTEGER NOT NULL CHECK (next_attempt_at >= 0),
+        last_error TEXT
+      );
+      PRAGMA user_version = 2;
+      COMMIT;
+    `);
   }
 
   ready(): boolean {
     return Boolean(this.connection.prepare('SELECT 1 AS ready').get());
+  }
+
+  providerState(): ProviderState | null {
+    const row = this.connection.prepare("SELECT next_attempt_at, last_error FROM provider_state WHERE provider = 'opensky'").get();
+    return row ? { nextAttemptAt: Number(row.next_attempt_at), lastError: row.last_error as string | null } : null;
+  }
+
+  saveProviderState(state: ProviderState) {
+    this.connection.prepare(`INSERT INTO provider_state VALUES ('opensky', ?, ?)
+      ON CONFLICT(provider) DO UPDATE SET next_attempt_at=excluded.next_attempt_at, last_error=excluded.last_error`)
+      .run(state.nextAttemptAt, state.lastError);
   }
 
   save(snapshot: StoredSnapshot) {

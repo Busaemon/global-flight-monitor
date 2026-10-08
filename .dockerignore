@@ -1,0 +1,17 @@
+.git
+node_modules
+dist
+dist-server
+data
+.env
+.env.*
+!.env.example
+!.env.production.example
+.tmp
+*.log
+test-results
+playwright-report
+docs
+tests
+.github
+.vscode
